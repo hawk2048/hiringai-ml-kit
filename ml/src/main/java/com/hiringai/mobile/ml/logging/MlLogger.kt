@@ -115,7 +115,7 @@ class MlLogger private constructor(private val context: Context) {
                     level = try { LogLevel.valueOf(json.optString("level", "INFO")) } catch (_: Exception) { LogLevel.INFO },
                     tag = json.optString("tag", ""),
                     message = json.optString("msg", ""),
-                    throwable = json.optString("throwable", null)
+                    throwable = json.optString("throwable", "").ifEmpty { null }
                 )
             }
         }
@@ -359,7 +359,10 @@ class MlLogger private constructor(private val context: Context) {
             LogLevel.DEBUG -> Log.d(entry.tag, entry.message)
             LogLevel.INFO -> Log.i(entry.tag, entry.message)
             LogLevel.WARN -> Log.w(entry.tag, entry.message)
-            LogLevel.ERROR -> Log.e(entry.tag, entry.message, entry.throwable)
+            LogLevel.ERROR -> {
+                val t = entry.throwable?.let { Throwable(it) }
+                Log.e(entry.tag, entry.message, t)
+            }
         }
     }
 

@@ -236,7 +236,7 @@ class ModelSelectionDialog(private val context: Context) {
         val query = searchInput.text.toString().lowercase().trim()
         val currentTab = tabHost.currentTabTag
 
-        val cat = try { ModelManager.ModelCategory.valueOf(currentTab) } catch (_: Exception) { ModelManager.ModelCategory.ALL }
+        val cat = try { ModelManager.ModelCategory.valueOf(currentTab ?: "ALL") } catch (_: Exception) { ModelManager.ModelCategory.ALL }
 
         val filtered = allModels.filter { model ->
             val categoryMatch = cat == ModelManager.ModelCategory.ALL ||
@@ -309,7 +309,7 @@ class ModelSelectionDialog(private val context: Context) {
             if (model.sizeBytes > 0) append(" (${model.formattedSize})")
             if (model.dimension > 0) append(" [${model.dimension}维]")
             if (model.recommendedRAM > 0) append(" [${model.recommendedRAM}GB RAM]")
-            if (model.quantization.isNotEmpty()) append(" [$quantization]")
+            if (model.quantization.isNotEmpty()) append(" [${model.quantization}]")
         }
     }
 

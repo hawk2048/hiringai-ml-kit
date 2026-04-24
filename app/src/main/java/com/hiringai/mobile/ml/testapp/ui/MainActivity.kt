@@ -62,16 +62,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadDeviceInfo() {
         lifecycleScope.launch {
-            val detector = DeviceCapabilityDetector.getInstance(this@MainActivity)
-            val capability = withContext(Dispatchers.IO) { detector.detect() }
+            val detector = DeviceCapabilityDetector(this@MainActivity)
+            val capability = withContext(Dispatchers.IO) { detector.detectCapabilities() }
             val storage = modelManager.getStorageUsage()
 
             deviceInfoText.text = buildString {
-                appendLine("📱 设备: ${capability.deviceName}")
-                appendLine("🔧 CPU: ${capability.cpuCores}核, ABI: ${capability.supportedAbis.joinToString()}")
-                appendLine("💾 RAM: ${capability.totalRamMB.toInt()} MB")
-                appendLine("🎮 GPU: ${capability.gpuInfo}")
-                appendLine("⚡ NPU: ${if (capability.hasNpu) "支持" else "不支持"}")
+                appendLine("📱 CPU: ${capability.cpuCores}核, ${capability.cpuArchitecture}")
+                appendLine("💾 RAM: ${capability.totalRAM} GB (可用: ${capability.availableRAM} GB)")
+                appendLine("🎮 GPU: ${capability.gpuName}")
+                appendLine("⚡ Vulkan: ${if (capability.hasVulkan) "支持" else "不支持"}, 性能评分: ${capability.benchmarkScore}/100")
             }
 
             storageInfoText.text = buildString {

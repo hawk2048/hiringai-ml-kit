@@ -169,11 +169,12 @@ class BenchmarkActivity : AppCompatActivity() {
             }
             .collect { progress ->
                 withContext(Dispatchers.Main) {
-                    updateProgress(progress)
-                    if (progress.state == BenchmarkState.COMPLETED || progress.state == BenchmarkState.FAILED) {
+                    updateDetailedProgress(progress)
+                    val state = progress.overallProgress.state
+                    if (state == BenchmarkState.COMPLETED || state == BenchmarkState.FAILED) {
                         addResultCard(progress)
                     }
-                    if (progress.state == BenchmarkState.FINISHED && progress.report != null) {
+                    if (state == BenchmarkState.FINISHED && progress.report != null) {
                         showSummary(progress.report!!)
                     }
                 }
@@ -184,25 +185,26 @@ class BenchmarkActivity : AppCompatActivity() {
         progressStage.text = "✅ 测试完成"
     }
 
-    private fun updateProgress(progress: BenchmarkProgress) {
+    private fun updateDetailedProgress(progress: DetailedBenchmarkProgress) {
+        val overall = progress.overallProgress
         progressBar.max = 100
-        progressBar.progress = progress.progressPercent
+        progressBar.progress = progress.overallPercent
 
-        progressPercent.text = "${progress.progressPercent}%"
-        progressModel.text = progress.currentModel?.name ?: "准备中..."
+        progressPercent.text = "${progress.overallPercent}%"
+        progressModel.text = overall.currentModel?.name ?: "准备中..."
 
-        progressStage.text = when (progress.state) {
-            BenchmarkState.LOADING -> "⏳ 加载模型..."
-            BenchmarkState.RUNNING -> "🔄 运行推理..."
+        progressStage.text = when (overall.state) {
+            BenchmarkState.LOADING -> "⏳ 加载模型... ${progress.stageLabel} ${progress.stageProgress}%"
+            BenchmarkState.RUNNING -> "🔄 运行推理... ${progress.stageLabel} ${progress.stageProgress}%"
             BenchmarkState.COMPLETED -> "✅ 单项完成"
             BenchmarkState.FAILED -> "❌ 单项失败"
             BenchmarkState.FINISHED -> "🏁 全部完成"
         }
 
-        logger.debug("Benchmark", "进度: ${progress.currentIndex}/${progress.totalCount} - ${progress.currentModel?.name} - ${progress.state}")
+        logger.debug("Benchmark", "进度: ${overall.currentIndex}/${overall.totalCount} - ${overall.currentModel?.name} - ${overall.state} - ${progress.stageLabel}")
     }
 
-    private fun addResultCard(progress: BenchmarkProgress) {
+    private fun addResultCard(progress: DetailedBenchmarkProgress) {
         // 注意：这个方法在 COMPLETED/FAILED 状态调用，但 progress 中没有单个结果
         // 结果汇总在 FINISHED 的 report 中
     }

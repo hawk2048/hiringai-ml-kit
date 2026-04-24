@@ -124,8 +124,8 @@ jobs:
 
       - name: Build APK (${{ matrix.build-type }})
         run: |
-          if grep -q "include ':app'" settings.gradle; then
-            ./gradlew :app:assemble${{ matrix.build-type }}
+          if [ -d "app/src" ]; then
+            ./gradlew :app:assemble${{ matrix.build-type }} -PstandaloneBuild=true
           else
             echo "::notice::app module not found, skipping APK build"
           fi

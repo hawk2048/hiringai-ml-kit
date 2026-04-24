@@ -17,3 +17,9 @@ dependencyResolutionManagement {
 
 rootProject.name = "HiringAI-ML-Kit"
 include ':ml'
+
+// Standalone app module — only included when building as standalone APK
+// Set standaloneBuild=true in gradle.properties or via -PstandaloneBuild=true
+if (settings.hasProperty("standaloneBuild") && settings.getProperty("standaloneBuild").toBoolean()) {
+    include ':app'
+}

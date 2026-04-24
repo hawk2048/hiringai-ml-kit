@@ -11,7 +11,7 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.hiringai.mobile.SafeNativeLoader
+import com.hiringai.mobile.ml.SafeNativeLoader
 import com.hiringai.mobile.ml.acceleration.AccelerationConfig
 import com.hiringai.mobile.ml.acceleration.AcceleratorDetector
 import com.hiringai.mobile.ml.acceleration.GPUDelegateManager
@@ -311,7 +311,7 @@ class LocalSpeechService private constructor(private val context: Context) {
             true
         } catch (e: UnsatisfiedLinkError) {
             Log.e(TAG, "ONNX Runtime native library not found", e)
-            SafeNativeLoader.markCrashed("onnxruntime")
+            SafeNativeLoader.markCrashed("onnxruntime", context)
             false
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load speech model: ${config.name}", e)

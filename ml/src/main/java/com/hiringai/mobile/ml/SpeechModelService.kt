@@ -128,11 +128,7 @@ class SpeechModelService(private val context: Context) {
             }
         }
 
-        fun getModelsDir(context: Context): File {
-            val dir = File(context.filesDir, "speech_models")
-            if (!dir.exists()) dir.mkdirs()
-            return dir
-        }
+        fun getModelsDir(context: Context): File = ModelStorage.getSpeechDir(context)
     }
 
     private var currentModelName: String = ""

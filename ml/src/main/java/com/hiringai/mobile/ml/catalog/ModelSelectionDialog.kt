@@ -12,10 +12,15 @@ import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.TabHost
 import android.widget.TextView
+import android.widget.Button
 import com.hiringai.mobile.ml.LocalEmbeddingService
 import com.hiringai.mobile.ml.LocalLLMService
 import com.hiringai.mobile.ml.ModelManager
 import com.hiringai.mobile.ml.logging.MlLogger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 模型选择弹窗
@@ -102,6 +107,7 @@ class ModelSelectionDialog(private val context: Context) {
     private lateinit var searchInput: EditText
     private lateinit var tabHost: TabHost
     private var allModels: List<CatalogModel> = emptyList()
+    private var sortByReleaseDate: Boolean = true  // 默认按发行时间排序
 
     private fun createDialogView(): View {
         val root = LinearLayout(context).apply {
@@ -122,6 +128,42 @@ class ModelSelectionDialog(private val context: Context) {
             })
         }
         root.addView(searchInput)
+
+        // 刷新按钮行：刷新在线目录 + 排序切换
+        val btnRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        val refreshBtn = Button(context).apply {
+            text = "🔄 刷新模型目录"
+            setOnClickListener { refreshOnlineCatalog() }
+        }
+
+        val sortBtn = Button(context).apply {
+            fun updateSortLabel() {
+                text = if (sortByReleaseDate) "📅 时间排序" else "⬇ 下载量排序"
+            }
+            updateSortLabel()
+            setOnClickListener {
+                sortByReleaseDate = !sortByReleaseDate
+                updateSortLabel()
+                // 重新排序后刷新列表
+                val sortedModels = if (sortByReleaseDate) {
+                    allModels.sortedWith(
+                        compareByDescending<CatalogModel> { it.releaseDate }
+                            .thenByDescending { it.downloadCount }
+                    )
+                } else {
+                    allModels.sortedByDescending { it.downloadCount }
+                }
+                allModels = sortedModels
+                filterModels()
+            }
+        }
+
+        btnRow.addView(refreshBtn)
+        btnRow.addView(sortBtn)
+        root.addView(btnRow)
 
         // TabHost 分类标签
         tabHost = TabHost(context).apply {
@@ -232,6 +274,71 @@ class ModelSelectionDialog(private val context: Context) {
         return models.distinctBy { it.name.lowercase() }
     }
 
+    /**
+     * 异步刷新在线模型目录（HuggingFace / ModelScope / OpenXLab）
+     * 刷新完成后自动更新列表并按发行时间排序
+     */
+    private fun refreshOnlineCatalog() {
+        val catalogService = ModelCatalogService.getInstance(context)
+        CoroutineScope(Dispatchers.Main).launch {
+            val statusView = TextView(context).apply {
+                text = "🔄 正在从 HuggingFace / ModelScope 获取最新模型..."
+                setPadding(16, 8, 16, 8)
+            }
+            container.addView(statusView, 0)
+
+            val freshModels = withContext(Dispatchers.IO) {
+                catalogService.fetchOnlineCatalog(sortByReleaseDate = true, limit = 200)
+            }
+
+            // 移除状态文本
+            container.removeViewAt(0)
+
+            if (freshModels.isNotEmpty()) {
+                // 合并到现有列表（去重）
+                val merged = (allModels + freshModels).distinctBy { it.id.lowercase() }
+                allModels = if (sortByReleaseDate) {
+                    merged.sortedWith(
+                        compareByDescending<CatalogModel> { it.releaseDate }
+                            .thenByDescending { it.downloadCount }
+                    )
+                } else {
+                    merged.sortedByDescending { it.downloadCount }
+                }
+
+                // 统计新增模型（30 天内）
+                val newCount = allModels.count { it.isNew }
+                val infoMsg = if (newCount > 0) {
+                    "✅ 获取成功！共 ${allModels.size} 个模型（含 ${newCount} 个新模型 🆕）"
+                } else {
+                    "✅ 获取成功！共 ${allModels.size} 个模型"
+                }
+
+                val infoView = TextView(context).apply {
+                    text = infoMsg
+                    setPadding(16, 8, 16, 8)
+                }
+                container.addView(infoView, 0)
+
+                // 2 秒后自动移除提示
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    if (container.childCount > 0) container.removeViewAt(0)
+                }, 3000)
+
+                filterModels()
+            } else {
+                val errView = TextView(context).apply {
+                    text = "⚠️ 获取失败，请检查网络连接"
+                    setPadding(16, 8, 16, 8)
+                }
+                container.addView(errView, 0)
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    if (container.childCount > 0) container.removeViewAt(0)
+                }, 3000)
+            }
+        }
+    }
+
     private fun filterModels() {
         val query = searchInput.text.toString().lowercase().trim()
         val currentTab = tabHost.currentTabTag
@@ -304,12 +411,46 @@ class ModelSelectionDialog(private val context: Context) {
 
     private fun buildItemLabel(model: CatalogModel): String {
         return buildString {
+            // 状态图标：已下载 / 端侧可用
             append(if (model.isDownloaded) "✅ " else "⬇️ ")
             append(model.name)
+
+            // 新模型徽章（最近 30 天发布）
+            if (model.isNew) append(" 🆕")
+
+            // 发行日期（在线模型）
+            if (model.releaseDate > 0) {
+                append(" [📅 ${model.formattedReleaseDate}]")
+            }
+
+            // 下载量（在线模型）
+            if (model.downloadCount > 0) {
+                append(" [⬇ ${model.formattedDownloads}]")
+            }
+
+            // 文件格式（ONNX / GGUF）
+            if (model.modelFileFormat.isNotEmpty()) {
+                append(" [${model.modelFileFormat.uppercase()}]")
+            }
+
+            // 量化类型
+            if (model.quantizationBits.isNotEmpty()) {
+                append(" [${model.quantizationBits}]")
+            } else if (model.quantization.isNotEmpty()) {
+                append(" [${model.quantization}]")
+            }
+
+            // 模型大小
             if (model.sizeBytes > 0) append(" (${model.formattedSize})")
+
+            // 维度（嵌入模型）
             if (model.dimension > 0) append(" [${model.dimension}维]")
+
+            // 内存需求
             if (model.recommendedRAM > 0) append(" [${model.recommendedRAM}GB RAM]")
-            if (model.quantization.isNotEmpty()) append(" [${model.quantization}]")
+
+            // 来源
+            append(" — ${model.source}")
         }
     }
 

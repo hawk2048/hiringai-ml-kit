@@ -26,6 +26,7 @@ data class SpeechModelBenchmarkResult(
     fun toSummary(): String = buildString {
         val typeStr = when (modelType) {
             SpeechModelType.WHISPER -> "Whisper"
+            SpeechModelType.WHISPER_ENCODER_DECODER -> "Whisper (Encoder-Decoder)"
             SpeechModelType.PARAFORMER -> "Paraformer"
             SpeechModelType.CAM_PLUS -> "Cam++ VAD"
             SpeechModelType.TTS -> "TTS"
@@ -66,6 +67,7 @@ data class SpeechBatchReport(
         grouped.forEach { (type, typeResults) ->
             val typeStr = when (type) {
                 SpeechModelType.WHISPER -> "Whisper (语音识别)"
+                SpeechModelType.WHISPER_ENCODER_DECODER -> "Whisper Encoder-Decoder (语音识别)"
                 SpeechModelType.PARAFORMER -> "Paraformer (中文语音识别)"
                 SpeechModelType.CAM_PLUS -> "Cam++ VAD (语音活动检测)"
                 SpeechModelType.TTS -> "TTS (语音合成)"
@@ -179,7 +181,7 @@ class SpeechModelBenchmark(private val context: Context) {
             val inferenceStartTime = System.currentTimeMillis()
 
             when (config.type) {
-                SpeechModelType.WHISPER, SpeechModelType.PARAFORMER -> {
+                SpeechModelType.WHISPER, SpeechModelType.WHISPER_ENCODER_DECODER, SpeechModelType.PARAFORMER -> {
                     speechService.transcribe(testAudio, config.sampleRate)
                 }
                 SpeechModelType.CAM_PLUS, SpeechModelType.VAD -> {

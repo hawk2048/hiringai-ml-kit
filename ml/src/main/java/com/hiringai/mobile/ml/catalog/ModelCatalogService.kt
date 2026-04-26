@@ -11,9 +11,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.URL
+import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
 /**
  * 模型目录服务
@@ -35,6 +37,13 @@ class ModelCatalogService private constructor(private val context: Context) {
         // 国内模型源
         private const val MODELSCOPE_API = "https://modelscope.cn/api/v1/models"
         private const val OPENXLAB_API = "https://openxlab.org.cn/gw/algo-backend/api/v1/models"
+
+        // ─── HuggingFace Hub API ────────────────────────────
+        // HF 国内镜像（国内优先，速度更快）
+        // hf-mirror.com 是国内最稳定的 HF 镜像站，API 路径与官方一致
+        private const val HF_MIRROR_API = "https://hf-mirror.com/api"
+        // 官方 HF API（镜像不可用时的备选）
+        private const val HF_FALLBACK_API = "https://huggingface.co/api"
 
         @Volatile
         private var instance: ModelCatalogService? = null
@@ -77,13 +86,30 @@ class ModelCatalogService private constructor(private val context: Context) {
     }
 
     /**
-     * 从在线源获取模型目录
-     * 先尝试 ModelScope，再尝试 OpenXLab
+     * 从所有在线源获取模型目录
+     *
+     * 优先级：HuggingFace（最新模型+发行时间）> ModelScope > OpenXLab
+     *
+     * @param sortByReleaseDate true=按发行时间倒序（最新优先），false=按下载量排序
+     * @param limit 每个源最多返回多少个模型（默认 200）
      */
-    suspend fun fetchOnlineCatalog(): List<CatalogModel> = withContext(Dispatchers.IO) {
+    suspend fun fetchOnlineCatalog(
+        sortByReleaseDate: Boolean = true,
+        limit: Int = 200
+    ): List<CatalogModel> = withContext(Dispatchers.IO) {
         val models = mutableListOf<CatalogModel>()
 
-        // 1. 从 ModelScope 获取 (主源)
+        // 1. HuggingFace Hub（主源：最新模型 + 发行时间 + 下载量）
+        try {
+            logger.info(TAG, "从 HuggingFace Hub 获取最新模型...")
+            val hfModels = fetchFromHuggingFace(sortByReleaseDate, limit)
+            models.addAll(hfModels)
+            logger.info(TAG, "HF Hub 获取到 ${hfModels.size} 个模型")
+        } catch (e: Exception) {
+            logger.error(TAG, "HF Hub 获取失败", e)
+        }
+
+        // 2. ModelScope（备用源）
         try {
             logger.info(TAG, "从 ModelScope 获取模型目录...")
             val msModels = fetchFromModelScope()
@@ -93,7 +119,7 @@ class ModelCatalogService private constructor(private val context: Context) {
             logger.error(TAG, "ModelScope 获取失败", e)
         }
 
-        // 2. 从 OpenXLab 获取 (备用源)
+        // 3. OpenXLab（备用源）
         try {
             logger.info(TAG, "从 OpenXLab 获取模型目录...")
             val oxModels = fetchFromOpenXLab()
@@ -103,15 +129,283 @@ class ModelCatalogService private constructor(private val context: Context) {
             logger.error(TAG, "OpenXLab 获取失败", e)
         }
 
-        // 3. 去重 (按 name)
-        val distinctModels = models.distinctBy { it.name.lowercase() }
+        // 4. 全局去重（按 id）
+        val distinctModels = models.distinctBy { it.id.lowercase() }
 
-        // 4. 缓存结果
-        if (distinctModels.isNotEmpty()) {
-            saveToCache(distinctModels)
+        // 5. 按发行时间排序（最新优先），无发行时间的放最后
+        val sorted = if (sortByReleaseDate) {
+            distinctModels.sortedWith(
+                compareByDescending<CatalogModel> { it.releaseDate }
+                    .thenByDescending { it.downloadCount }
+            )
+        } else {
+            distinctModels.sortedByDescending { it.downloadCount }
         }
 
-        distinctModels
+        // 6. 缓存结果
+        if (sorted.isNotEmpty()) {
+            saveToCache(sorted)
+        }
+
+        sorted
+    }
+
+    // ─── HuggingFace Hub ───────────────────────────────────────────
+
+    /**
+     * 从 HuggingFace Hub API 获取模型列表
+     *
+     * HF Hub API 文档: https://huggingface.co/api/models
+     * 支持字段：createdAt, lastModified, downloads, likes, pipeline_tag, tags
+     *
+     * @param sortByRelease true=按创建时间倒序（最新模型优先），false=按下载量
+     * @param limit 每个任务类型最多取多少条（API 硬限制 100）
+     */
+    private fun fetchFromHuggingFace(
+        sortByRelease: Boolean = true,
+        limit: Int = 200
+    ): List<CatalogModel> {
+        val models = mutableListOf<CatalogModel>()
+
+        val taskTypes = listOf(
+            "text-generation" to CatalogModel.ModelCategory.LLM,
+            "automatic-speech-recognition" to CatalogModel.ModelCategory.SPEECH,
+            "image-classification" to CatalogModel.ModelCategory.IMAGE,
+            "feature-extraction" to CatalogModel.ModelCategory.EMBEDDING,
+            "text-to-image" to CatalogModel.ModelCategory.IMAGE,
+            "fill-mask" to CatalogModel.ModelCategory.LLM
+        )
+
+        // ── 国内优先：先用镜像，失败则回退到官方 ──
+        val baseApi = tryFetchWithMirror() ?: tryFetchWithFallback()
+        if (baseApi == null) {
+            logger.warn(TAG, "HF Hub (镜像 + 官方) 全部不可用，跳过 HF 数据源")
+            return models
+        }
+
+        for ((task, category) in taskTypes) {
+            try {
+                val encodedTask = URLEncoder.encode(task, "UTF-8")
+                val sortField = if (sortByRelease) "createdAt" else "downloads"
+                // HF API: direction=1 表示降序（最大/最新在前）
+                val url = "$baseApi/models?pipeline_tag=$encodedTask&sort=$sortField&direction=1&limit=100&full=true"
+
+                val conn = URL(url).openConnection()
+                conn.connectTimeout = 15000
+                conn.readTimeout = 30000
+                conn.setRequestProperty("Accept", "application/json")
+                conn.setRequestProperty("User-Agent", "HiringAI-ML/2.1")
+
+                val response = conn.getInputStream().bufferedReader().readText()
+                val jsonArray = JSONArray(response)
+
+                for (i in 0 until minOf(jsonArray.length(), 50)) {
+                    val item = jsonArray.optJSONObject(i) ?: continue
+                    val model = parseHuggingFaceItem(item, category, baseApi)
+                    if (model != null) models.add(model)
+                }
+            } catch (e: Exception) {
+                logger.warn(TAG, "HF Hub $task 获取失败: ${e.message}")
+            }
+        }
+
+        // 单独获取 ONNX 分类下的模型
+        try {
+            val sortField = if (sortByRelease) "createdAt" else "downloads"
+            val onnxUrl = "$baseApi/models?filter=onnx&sort=$sortField&direction=1&limit=50&full=true"
+            val conn = URL(onnxUrl).openConnection()
+            conn.connectTimeout = 15000
+            conn.readTimeout = 30000
+            conn.setRequestProperty("User-Agent", "HiringAI-ML/2.1")
+
+            val resp = conn.getInputStream().bufferedReader().readText()
+            val arr = JSONArray(resp)
+            for (i in 0 until minOf(arr.length(), 30)) {
+                val item = arr.optJSONObject(i) ?: continue
+                val model = parseHuggingFaceItem(
+                    item,
+                    inferCategoryFromName(item.optString("id", "")),
+                    baseApi
+                )
+                if (model != null && models.none { it.id == model.id }) {
+                    models.add(model)
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn(TAG, "HF Hub ONNX 分类获取失败: ${e.message}")
+        }
+
+        return models
+    }
+
+    /**
+     * 优先尝试镜像 API，5 秒内响应即视为可用
+     * @return 可用的 API 基础 URL，或 null（全部不可用）
+     */
+    private fun tryFetchWithMirror(): String? {
+        return try {
+            val url = URL("$HF_MIRROR_API/models?pipeline_tag=text-generation&sort=createdAt&direction=1&limit=1&full=true")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 5000
+            conn.readTimeout = 10000
+            conn.requestMethod = "HEAD"
+            val code = conn.responseCode
+            conn.disconnect()
+            if (code in 200..399) {
+                logger.info(TAG, "HF 镜像可用: $HF_MIRROR_API")
+                HF_MIRROR_API
+            } else null
+        } catch (e: Exception) {
+            logger.warn(TAG, "HF 镜像不可用: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * 官方 API 备选（镜像不可用时）
+     */
+    private fun tryFetchWithFallback(): String? {
+        return try {
+            val url = URL("$HF_FALLBACK_API/models?pipeline_tag=text-generation&sort=createdAt&direction=1&limit=1&full=true")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 8000
+            conn.readTimeout = 15000
+            conn.requestMethod = "HEAD"
+            val code = conn.responseCode
+            conn.disconnect()
+            if (code in 200..399) {
+                logger.info(TAG, "使用官方 HF API: $HF_FALLBACK_API")
+                HF_FALLBACK_API
+            } else null
+        } catch (e: Exception) {
+            logger.warn(TAG, "官方 HF API 也不可用: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * 解析 HF Hub API 返回的单个模型条目
+     *
+     * HF API 字段说明：
+     * - id: "namespace/model-name" 格式
+     * - createdAt: ISO 8601 创建时间（发行日期）
+     * - lastModified: ISO 8601 最后修改时间
+     * - downloads: 累计下载量
+     * - likes: 点赞数
+     * - pipeline_tag: 任务类型标签
+     * - tags: 标签数组（含 "onnx" / "gguf" 标记）
+     * - siblings: 文件列表（可判断 .onnx / .gguf / .safetensors 文件）
+     *
+     * @param baseApi 当前使用的 API 基础 URL（镜像或官方），用于生成正确的下载链接
+     */
+    private fun parseHuggingFaceItem(item: JSONObject, category: CatalogModel.ModelCategory, baseApi: String): CatalogModel? {
+        return try {
+            val id = item.optString("id", "")
+            if (id.isEmpty()) return null
+
+            val parts = id.split("/", limit = 2)
+            val author = parts.getOrNull(0) ?: ""
+            val name = parts.getOrNull(1) ?: id
+
+            // 解析创建时间（ISO 8601 → epoch ms）
+            val createdAt = parseIso8601(item.optString("createdAt", ""))
+            val lastModified = parseIso8601(item.optString("lastModified", ""))
+
+            // 解析文件列表，判断是否 ONNX / GGUF
+            val siblings = item.optJSONArray("siblings") ?: JSONArray()
+            var hasOnnx = false
+            var hasGguf = false
+            var modelFormat = ""
+            var quantBits = ""
+
+            for (i in 0 until siblings.length()) {
+                val f = siblings.optJSONObject(i) ?: continue
+                val rname = f.optString("rfilename", "")
+                val lower = rname.lowercase()
+                when {
+                    lower.endsWith(".onnx") -> { hasOnnx = true; modelFormat = "onnx" }
+                    lower.endsWith(".gguf") -> { hasGguf = true; modelFormat = "gguf" }
+                    lower.endsWith(".safetensors") && modelFormat.isEmpty() -> { modelFormat = "safetensors" }
+                    lower.endsWith(".pt") || lower.endsWith(".pth") -> {
+                        if (modelFormat.isEmpty()) modelFormat = "pytorch"
+                    }
+                    // 量化位数字符串（如 Q4_K_M, Q8_0）
+                    lower.contains("q4_") || lower.contains("q5_") ||
+                    lower.contains("q6_") || lower.contains("q8_") -> {
+                        val quant = lower.substringAfter(".gguf").substringBefore("_").takeIf { it.isNotEmpty() }
+                            ?: run {
+                                // 从文件名提取量化类型
+                                val segs = rname.split("_", "-")
+                                segs.find { s -> s.matches(Regex("Q[0-9]+.*")) } ?: ""
+                            }
+                        if (quant.isNotEmpty()) quantBits = quant
+                    }
+                }
+            }
+
+            // 标签
+            val tagsArray = item.optJSONArray("tags") ?: JSONArray()
+            val tags = (0 until tagsArray.length()).mapNotNull { tagsArray.optString(it) }
+
+            // 下载量（HF API 有时返回 Int 有时返回 Long）
+            val downloadsRaw = item.opt("downloads")
+            val downloads = when (downloadsRaw) {
+                is Number -> downloadsRaw.toLong()
+                is String -> downloadsRaw.toLongOrNull() ?: 0L
+                else -> 0L
+            }
+
+            // 点赞数
+            val likes = item.optInt("likes", 0)
+
+            // 下载 URL（根据实际使用的 API 源生成对应链接）
+            val host = if (baseApi.contains("hf-mirror")) "hf-mirror.com" else "huggingface.co"
+            val downloadUrl = "https://$host/$id"
+
+            CatalogModel(
+                id = id,
+                name = name,
+                category = category,
+                sizeBytes = 0L,  // HF API 不直接返回文件大小，从 siblings 累加可在上传文件信息时做
+                description = item.optString("modelId", ""),  // HF 没有 description，用 id 代替
+                source = "HuggingFace",
+                downloadUrl = downloadUrl,
+                author = author,
+                tags = tags,
+                releaseDate = createdAt,
+                lastModified = lastModified,
+                downloadCount = downloads,
+                likes = likes,
+                pipelineTag = item.optString("pipeline_tag", ""),
+                modelFileFormat = modelFormat,
+                isGguf = hasGguf,
+                quantizationBits = quantBits
+            )
+        } catch (e: Exception) {
+            logger.warn(TAG, "HF 模型解析失败: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * 解析 ISO 8601 时间字符串为 epoch milliseconds
+     * 支持格式：2024-03-15T10:30:00Z, 2024-03-15T10:30:00.000Z
+     */
+    private fun parseIso8601(iso: String): Long {
+        if (iso.isEmpty()) return 0L
+        return try {
+            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+            sdf.timeZone = TimeZone.getTimeZone("UTC")
+            sdf.parse(iso)?.time ?: 0L
+        } catch (_: Exception) {
+            try {
+                val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
+                sdf.timeZone = TimeZone.getTimeZone("UTC")
+                sdf.parse(iso)?.time ?: 0L
+            } catch (_: Exception) {
+                0L
+            }
+        }
     }
 
     /**
@@ -264,6 +558,102 @@ class ModelCatalogService private constructor(private val context: Context) {
     }
 
     /**
+     * 从 HuggingFace Hub 搜索模型（实时搜索，与缓存无关）
+     * 
+     * HF Hub API 支持的搜索参数：
+     * - search: 搜索关键词（匹配模型名称/描述）
+     * - pipeline_tag: 任务类型（text-generation, feature-extraction 等）
+     * - filter: 标签过滤（onnx, gguf 等）
+     * - sort: 排序字段（downloads, createdAt, likes）
+     * - direction: 1=降序（最大/最新），-1=升序
+     * - limit: 返回数量（API 硬限制 100）
+     * 
+     * @param query 搜索关键词
+     * @param category 模型类别（用于筛选任务类型）
+     * @param sortBy 排序方式（downloads/downloads_DESC/likes/createdAt）
+     * @param limit 返回数量
+     * @return 匹配的模型列表
+     */
+    suspend fun searchOnlineModels(
+        query: String,
+        category: CatalogModel.ModelCategory? = null,
+        sortBy: String = "downloads",
+        limit: Int = 30
+    ): List<CatalogModel> = withContext(Dispatchers.IO) {
+        val models = mutableListOf<CatalogModel>()
+
+        // 决定 API 基础 URL
+        val baseApi = tryFetchWithMirror() ?: tryFetchWithFallback() ?: run {
+            logger.warn(TAG, "HF Hub 不可用，搜索失败")
+            return@withContext models
+        }
+
+        // 根据类别确定 pipeline_tag
+        val pipelineTag = when (category) {
+            CatalogModel.ModelCategory.LLM -> "text-generation"
+            CatalogModel.ModelCategory.EMBEDDING -> "feature-extraction"
+            CatalogModel.ModelCategory.SPEECH -> "automatic-speech-recognition"
+            CatalogModel.ModelCategory.IMAGE -> "image-classification"
+            null -> null
+        }
+
+        try {
+            // 构建搜索 URL
+            val params = mutableListOf<String>()
+            if (query.isNotBlank()) {
+                params.add("search=${URLEncoder.encode(query, "UTF-8")}")
+            }
+            if (pipelineTag != null) {
+                params.add("pipeline_tag=$pipelineTag")
+            }
+            // 排序：downloads 按下载量，createdAt 按时间
+            when (sortBy) {
+                "downloads", "downloads_DESC" -> {
+                    params.add("sort=downloads")
+                    params.add("direction=1")
+                }
+                "likes" -> {
+                    params.add("sort=likes")
+                    params.add("direction=1")
+                }
+                "createdAt" -> {
+                    params.add("sort=createdAt")
+                    params.add("direction=1")
+                }
+            }
+            params.add("limit=$limit")
+            params.add("full=true")
+
+            val url = "$baseApi/models?${params.joinToString("&")}"
+            logger.info(TAG, "搜索模型: $url")
+
+            val conn = URL(url).openConnection()
+            conn.connectTimeout = 15000
+            conn.readTimeout = 30000
+            conn.setRequestProperty("Accept", "application/json")
+            conn.setRequestProperty("User-Agent", "HiringAI-ML/2.1")
+
+            val response = conn.getInputStream().bufferedReader().readText()
+            val jsonArray = JSONArray(response)
+
+            for (i in 0 until jsonArray.length()) {
+                val item = jsonArray.optJSONObject(i) ?: continue
+                val inferredCategory = category ?: inferCategoryFromName(item.optString("id", ""))
+                val model = parseHuggingFaceItem(item, inferredCategory, baseApi)
+                if (model != null) {
+                    models.add(model)
+                }
+            }
+
+            logger.info(TAG, "搜索到 ${models.size} 个模型")
+        } catch (e: Exception) {
+            logger.error(TAG, "模型搜索失败: ${e.message}", e)
+        }
+
+        models
+    }
+
+    /**
      * 按分类获取模型
      */
     fun getModelsByCategory(category: CatalogModel.ModelCategory): List<CatalogModel> {
@@ -310,6 +700,15 @@ class ModelCatalogService private constructor(private val context: Context) {
             put("dimension", model.dimension)
             put("maxSeqLength", model.maxSeqLength)
             put("recommendedRAM", model.recommendedRAM)
+            // 发行信息
+            put("releaseDate", model.releaseDate)
+            put("lastModified", model.lastModified)
+            put("downloadCount", model.downloadCount)
+            put("likes", model.likes)
+            put("pipelineTag", model.pipelineTag)
+            put("modelFileFormat", model.modelFileFormat)
+            put("isGguf", model.isGguf)
+            put("quantizationBits", model.quantizationBits)
 
             val tagsArray = JSONArray()
             model.tags.forEach { tagsArray.put(it) }
@@ -342,7 +741,15 @@ class ModelCatalogService private constructor(private val context: Context) {
                     language = obj.optString("language", ""),
                     author = obj.optString("author", ""),
                     license = obj.optString("license", ""),
-                    tags = tags
+                    tags = tags,
+                    releaseDate = obj.optLong("releaseDate", 0L),
+                    lastModified = obj.optLong("lastModified", 0L),
+                    downloadCount = obj.optLong("downloadCount", 0L),
+                    likes = obj.optInt("likes", 0),
+                    pipelineTag = obj.optString("pipelineTag", ""),
+                    modelFileFormat = obj.optString("modelFileFormat", ""),
+                    isGguf = obj.optBoolean("isGguf", false),
+                    quantizationBits = obj.optString("quantizationBits", "")
                 ))
             } catch (_: Exception) {
             }

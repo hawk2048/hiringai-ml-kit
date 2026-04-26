@@ -227,7 +227,7 @@ class LLMBenchmarkRunner(private val context: Context) {
                 val stageWeight = stage.weight
                 val overallPercent = ((baseProgress + (stageProgress / 100.0 * stageWeight)) / models.size * 100).toInt()
 
-                // 无法在回调中直接 emit（不在 flow builder 内），仅记录日志
+                // 通过 emit 无法在回调中使用，所以这里用日志
                 Log.d(TAG, "进度: 模型 $index/${models.size} - ${config.name} - $stage $stageProgress% (总体 ~$overallPercent%)")
             }
 

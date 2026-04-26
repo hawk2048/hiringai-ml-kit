@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色模式颜色 -->
+    <color name="primary">#818CF8</color>
+    <color name="primary_dark">#6366F1</color>
+    <color name="primary_light">#312E81</color>
+    <color name="primary_variant">#A5B4FC</color>
+
+    <color name="accent">#FBBF24</color>
+    <color name="accent_light">#F59E0B</color>
+
+    <!-- 语义颜色 - 深色 -->
+    <color name="success">#34D399</color>
+    <color name="success_light">#064E3B</color>
+    <color name="success_dark">#6EE7B7</color>
+
+    <color name="warning">#FBBF24</color>
+    <color name="warning_light">#78350F</color>
+    <color name="warning_dark">#FCD34D</color>
+
+    <color name="error">#F87171</color>
+    <color name="error_light">#7F1D1D</color>
+    <color name="error_dark">#FCA5A5</color>
+
+    <color name="info">#60A5FA</color>
+    <color name="info_light">#1E3A8A</color>
+    <color name="info_dark">#93C5FD</color>
+
+    <!-- 背景 - 深色 -->
+    <color name="background">#0F172A</color>
+    <color name="surface">#1E293B</color>
+    <color name="surface_variant">#334155</color>
+    <color name="card_background">#1E293B</color>
+
+    <!-- 文字 - 深色 -->
+    <color name="text_primary">#F1F5F9</color>
+    <color name="text_secondary">#94A3B8</color>
+    <color name="text_tertiary">#64748B</color>
+    <color name="text_on_primary">#0F172A</color>
+
+    <!-- 边框和分割线 - 深色 -->
+    <color name="divider">#334155</color>
+    <color name="border">#475569</color>
+
+    <!-- 渐变 - 深色 -->
+    <color name="gradient_start">#818CF8</color>
+    <color name="gradient_end">#A78BFA</color>
+
+    <!-- 状态 - 深色 -->
+    <color name="state_downloading">#60A5FA</color>
+    <color name="state_loading">#FBBF24</color>
+    <color name="state_running">#34D399</color>
+    <color name="state_complete">#818CF8</color>
+
+    <!-- 下载状态 - 深色 -->
+    <color name="downloading_background">#1E3A5F</color>
+    <color name="download_progress_start">#60A5FA</color>
+    <color name="download_progress_mid">#818CF8</color>
+    <color name="download_progress_end">#34D399</color>
+</resources>

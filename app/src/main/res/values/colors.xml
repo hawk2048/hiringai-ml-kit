@@ -1,11 +1,74 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="primary">#1976D2</color>
-    <color name="primary_dark">#1565C0</color>
-    <color name="primary_light">#BBDEFB</color>
-    <color name="accent">#FF6F00</color>
-    <color name="background">#FAFAFA</color>
+    <!-- ==================== 品牌主色 ==================== -->
+    <color name="primary">#6366F1</color>
+    <color name="primary_dark">#4F46E5</color>
+    <color name="primary_light">#E0E7FF</color>
+    <color name="primary_variant">#818CF8</color>
+
+    <!-- ==================== 强调色 ==================== -->
+    <color name="accent">#F59E0B</color>
+    <color name="accent_light">#FCD34D</color>
+
+    <!-- ==================== 语义颜色 ==================== -->
+    <!-- 成功 - 绿色系 -->
+    <color name="success">#10B981</color>
+    <color name="success_light">#D1FAE5</color>
+    <color name="success_dark">#059669</color>
+
+    <!-- 警告 - 橙色系 -->
+    <color name="warning">#F59E0B</color>
+    <color name="warning_light">#FEF3C7</color>
+    <color name="warning_dark">#D97706</color>
+
+    <!-- 错误 - 红色系 -->
+    <color name="error">#EF4444</color>
+    <color name="error_light">#FEE2E2</color>
+    <color name="error_dark">#DC2626</color>
+
+    <!-- 信息 - 蓝色系 -->
+    <color name="info">#3B82F6</color>
+    <color name="info_light">#DBEAFE</color>
+    <color name="info_dark">#2563EB</color>
+
+    <!-- ==================== 背景颜色 ==================== -->
+    <color name="background">#F8FAFC</color>
     <color name="surface">#FFFFFF</color>
-    <color name="text_primary">#212121</color>
-    <color name="text_secondary">#757575</color>
+    <color name="surface_variant">#F1F5F9</color>
+    <color name="card_background">#FFFFFF</color>
+
+    <!-- ==================== 文字颜色 ==================== -->
+    <color name="text_primary">#1E293B</color>
+    <color name="text_secondary">#64748B</color>
+    <color name="text_tertiary">#94A3B8</color>
+    <color name="text_on_primary">#FFFFFF</color>
+
+    <!-- ==================== 边框和分割线 ==================== -->
+    <color name="divider">#E2E8F0</color>
+    <color name="border">#CBD5E1</color>
+
+    <!-- ==================== 渐变色 ==================== -->
+    <color name="gradient_start">#6366F1</color>
+    <color name="gradient_end">#8B5CF6</color>
+
+    <!-- ==================== 状态颜色（用于进度条等）==================== -->
+    <color name="state_downloading">#3B82F6</color>
+    <color name="state_loading">#F59E0B</color>
+    <color name="state_running">#10B981</color>
+    <color name="state_complete">#6366F1</color>
+
+    <!-- ==================== 下载状态颜色 ==================== -->
+    <color name="downloading_background">#EFF6FF</color>
+    <color name="download_progress_start">#3B82F6</color>
+    <color name="download_progress_mid">#6366F1</color>
+    <color name="download_progress_end">#10B981</color>
+
+    <!-- ==================== 阴影颜色 ==================== -->
+    <color name="shadow_light">#1E293B</color>
+    <color name="shadow_overlay">#000000</color>
+
+    <!-- ==================== 兼容旧版本 ==================== -->
+    <color name="colorPrimary">#6366F1</color>
+    <color name="colorPrimaryDark">#4F46E5</color>
+    <color name="colorAccent">#F59E0B</color>
 </resources>

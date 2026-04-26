@@ -4,7 +4,13 @@ import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -46,7 +52,96 @@ class LocalLLMService private constructor(private val context: Context) {
         private const val HF_MIRROR = "https://hf-mirror.com"
 
         val AVAILABLE_MODELS = listOf(
-            // ========== 轻量级 (<1GB RAM) ==========
+            // ========== DeepSeek-R1 蒸馏系列 (推理能力强!) ==========
+            ModelConfig(
+                name = "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M",
+                url = "$HF_MIRROR/unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
+                size = 1_200_000_000,
+                requiredRAM = 2,
+                contextSize = 8192,
+                template = "qwen2",
+                description = "🧠 DeepSeek-R1 蒸馏版！1.5B参数，强大推理能力（数学/代码），推荐移动端"
+            ),
+            ModelConfig(
+                name = "DeepSeek-R1-Distill-Qwen-7B-Q4_K_M",
+                url = "$HF_MIRROR/unsloth/DeepSeek-R1-Distill-Qwen-7B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf",
+                size = 4_680_000_000,
+                requiredRAM = 6,
+                contextSize = 8192,
+                template = "qwen2",
+                description = "🧠 DeepSeek-R1 蒸馏版！7B参数，更强推理，4.5GB内存"
+            ),
+            ModelConfig(
+                name = "DeepSeek-R1-Distill-Llama-8B-Q4_K_M",
+                url = "$HF_MIRROR/unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF/resolve/main/DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf",
+                size = 4_700_000_000,
+                requiredRAM = 6,
+                contextSize = 8192,
+                template = "llama",
+                description = "🧠 DeepSeek-R1 蒸馏版！Llama架构8B，英文推理强"
+            ),
+
+            // ========== Qwen3.6 系列 (2026年4月最新!) ==========
+            ModelConfig(
+                name = "Qwen3.6-35B-A3B-UD-Q4_K_XL",
+                url = "$HF_MIRROR/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+                size = 22_000_000_000L,
+                requiredRAM = 24,
+                contextSize = 65536,
+                template = "qwen35",
+                description = "🔥 Qwen3.6 最新版！MoE架构，35B激活3B，256K上下文，支持201种语言，思维模式切换"
+            ),
+
+            // ========== Qwen3.5 系列 (2026年2月) ==========
+            ModelConfig(
+                name = "Qwen3.5-0.8B-UD-Q4_K_XL",
+                url = "$HF_MIRROR/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-UD-Q4_K_XL.gguf",
+                size = 559_000_000,
+                requiredRAM = 1,
+                contextSize = 32768,
+                template = "qwen35",
+                description = "🆕 Qwen3.5 最强小模型！动态量化，3.5GB内存，中文能力大幅提升"
+            ),
+            ModelConfig(
+                name = "Qwen3.5-2B-UD-Q4_K_XL",
+                url = "$HF_MIRROR/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-UD-Q4_K_XL.gguf",
+                size = 1_100_000_000,
+                requiredRAM = 2,
+                contextSize = 32768,
+                template = "qwen35",
+                description = "🆕 Qwen3.5 均衡之选！2B参数，32K上下文，性价比最高"
+            ),
+            ModelConfig(
+                name = "Qwen3.5-4B-UD-Q4_K_XL",
+                url = "$HF_MIRROR/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-UD-Q4_K_XL.gguf",
+                size = 2_500_000_000,
+                requiredRAM = 3,
+                contextSize = 32768,
+                template = "qwen35",
+                description = "🆕 Qwen3.5 中小规模！4B参数，更强推理能力"
+            ),
+            ModelConfig(
+                name = "Qwen3.5-9B-UD-Q4_K_XL",
+                url = "$HF_MIRROR/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-UD-Q4_K_XL.gguf",
+                size = 5_500_000_000,
+                requiredRAM = 6,
+                contextSize = 32768,
+                template = "qwen35",
+                description = "🆕 Qwen3.5 高性能版！9B参数，接近大模型表现"
+            ),
+
+            // ========== Qwen3 系列 (2025年4月) ==========
+            ModelConfig(
+                name = "Qwen3-0.6B-Q4_0",
+                url = "$HF_MIRROR/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_0.gguf",
+                size = 382_000_000,
+                requiredRAM = 1,
+                contextSize = 32768,
+                template = "qwen3",
+                description = "Qwen3 入门版！0.6B参数，支持思维/非思维模式切换"
+            ),
+
+            // ========== Qwen2.5 系列 ==========
             ModelConfig(
                 name = "Qwen2.5-0.5B-Instruct-Q4_0",
                 url = "$HF_MIRROR/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_0.gguf",
@@ -56,6 +151,17 @@ class LocalLLMService private constructor(private val context: Context) {
                 template = "chatml",
                 description = "超轻量级，中文优化，推荐入门"
             ),
+            ModelConfig(
+                name = "Qwen2-0.5B-Instruct-Q4_0",
+                url = "$HF_MIRROR/Qwen/Qwen2-0.5B-Instruct-GGUF/resolve/main/qwen2-0.5b-instruct-q4_0.gguf",
+                size = 420_000_000,
+                requiredRAM = 2,
+                contextSize = 2048,
+                template = "chatml",
+                description = "Qwen2 基础版，中文能力出色"
+            ),
+
+            // ========== 其他轻量级模型 ==========
             ModelConfig(
                 name = "Phi-2-Q4_0",
                 url = "$HF_MIRROR/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q4_0.gguf",
@@ -75,16 +181,7 @@ class LocalLLMService private constructor(private val context: Context) {
                 description = "HuggingFace SmolLM2-1.7B，性能均衡"
             ),
 
-            // ========== 中量级 (1-2GB RAM) ==========
-            ModelConfig(
-                name = "Qwen2-0.5B-Instruct-Q4_0",
-                url = "$HF_MIRROR/Qwen/Qwen2-0.5B-Instruct-GGUF/resolve/main/qwen2-0.5b-instruct-q4_0.gguf",
-                size = 420_000_000,
-                requiredRAM = 2,
-                contextSize = 2048,
-                template = "chatml",
-                description = "Qwen2 基础版，中文能力出色"
-            ),
+            // ========== 中量级模型 (1-2GB RAM) ==========
             ModelConfig(
                 name = "TinyLlama-1.1B-Chat-Q4_K_M",
                 url = "$HF_MIRROR/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
@@ -149,17 +246,9 @@ class LocalLLMService private constructor(private val context: Context) {
             }
         }
 
-        fun getModelsDir(context: Context): File {
-            val dir = File(context.filesDir, "models")
-            if (!dir.exists()) dir.mkdirs()
-            return dir
-        }
+        fun getModelsDir(context: Context): File = ModelStorage.getLLMDir(context)
 
-        fun getEmbeddingModelDir(context: Context): File {
-            val dir = File(context.filesDir, "embedding")
-            if (!dir.exists()) dir.mkdirs()
-            return dir
-        }
+        fun getEmbeddingModelDir(context: Context): File = ModelStorage.getEmbeddingDir(context)
 
         // 保存加载状态到SharedPreferences
         private const val PREFS_NAME = "ml_model_state"
@@ -183,9 +272,80 @@ class LocalLLMService private constructor(private val context: Context) {
                 .remove(KEY_LOADED_MODEL)
                 .apply()
         }
+
+        /**
+         * 静态版 token 估算（供 companion object 内部和外部使用）
+         */
+        fun estimateTokenCountStatic(text: String): Int {
+            if (text.isEmpty()) return 0
+            var cjkCount = 0
+            var asciiWordCount = 0
+            var punctCount = 0
+            var inWord = false
+
+            for (c in text) {
+                val cp = c.code
+                when {
+                    cp in 0x4E00..0x9FFF || cp in 0x3400..0x4DBF ||
+                    cp in 0xF900..0xFAFF -> {
+                        cjkCount++
+                        if (inWord) { asciiWordCount++; inWord = false }
+                    }
+                    c.isLetter() -> { inWord = true }
+                    c.isWhitespace() -> {
+                        if (inWord) { asciiWordCount++; inWord = false }
+                    }
+                    else -> {
+                        if (inWord) { asciiWordCount++; inWord = false }
+                        punctCount++
+                    }
+                }
+            }
+            if (inWord) asciiWordCount++
+
+            return ((cjkCount * 1.5) + (asciiWordCount * 1.3) + (punctCount * 0.1))
+                .toInt().coerceAtLeast(1)
+        }
     }
 
     val isModelLoaded: Boolean get() = model != null
+
+    // ─── 流式指标数据类 ───────────────────────────────────
+
+    /**
+     * 流式 token 事件（兼容旧版接口）
+     */
+    data class StreamingToken(
+        val token: String,
+        val tokenIndex: Int,
+        val timestampMs: Long
+    )
+
+    /**
+     * 流式过程事件（实时 TTFT 捕获）
+     */
+    data class StreamingMetrics(
+        val token: String,
+        val charCount: Int,
+        val tokenCount: Int,
+        val firstTokenTimestampMs: Long,
+        val isFirstToken: Boolean,
+        val timestampMs: Long
+    )
+
+    /**
+     * 完整流式推理结果（供 Benchmark 使用）
+     */
+    data class StreamingMetricsResult(
+        val fullText: String,
+        val totalDurationMs: Long,
+        val ttftMs: Long,              // Time to First Token（真实值，非估算）
+        val prefillTokenCount: Int,
+        val prefillTps: Double,          // prompt tokens / TTFT(s)
+        val outputTokenCount: Int,
+        val decodeTps: Double,           // output tokens / decode(s)
+        val avgTokenLatencyMs: Double
+    )
 
     fun getLoadedModelName(): String = currentModelName
 
@@ -354,6 +514,131 @@ class LocalLLMService private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * 流式生成，并实时测量 TTFT 和吞吐指标（第一个 token 到达即打时间戳）
+     *
+     * @return StreamingResult 包含 TTFT、prefill TPS、decode TPS、完整文本、token 计数
+     */
+    fun generateStreamingWithMetrics(
+        prompt: String,
+        maxTokens: Int = 512,
+        temperature: Float = 0.7f
+    ): Flow<StreamingMetrics>? {
+        val m = model
+        if (m == null) {
+            Log.w(TAG, "No model loaded, cannot stream generate")
+            return null
+        }
+        return try {
+            measureStreamingMetrics(prompt, maxTokens)
+        } catch (e: Exception) {
+            Log.e(TAG, "Stream generation failed", e)
+            null
+        }
+    }
+
+    /**
+     * 真实 TTFT + 吞吐测量（非挂起，直接在 Flow 中记录时间戳）
+     *
+     * 使用方式：
+     * ```kotlin
+     * val result = llmService.measureStreamingMetrics(prompt, maxTokens)
+     * result.collect { token ->
+     *     if (result.firstTokenTimestampMs > 0 && token.isNotEmpty()) {
+     *         val ttft = System.currentTimeMillis() - result.firstTokenTimestampMs
+     *     }
+     * }
+     * ```
+     */
+    fun measureStreamingMetrics(
+        prompt: String,
+        maxTokens: Int = 512
+    ): Flow<StreamingMetrics> = flow {
+        val m = model
+        if (m == null) {
+            Log.w(TAG, "No model loaded")
+            return@flow
+        }
+
+        val firstTokenTimestamp = AtomicLong(0L)
+        val totalChars = AtomicInteger(0)
+        val tokenCount = AtomicInteger(0)
+        val prefillDone = AtomicBoolean(false)
+
+        try {
+            m.generateStream(prompt).collect { token ->
+                // ── TTFT 捕获：第一个非空 token 到达时记录时间戳 ──
+                if (firstTokenTimestamp.get() == 0L && token.isNotEmpty()) {
+                    firstTokenTimestamp.set(System.currentTimeMillis())
+                }
+
+                totalChars.addAndGet(token.length)
+                tokenCount.incrementAndGet()
+
+                emit(
+                    StreamingMetrics(
+                        token = token,
+                        charCount = totalChars.get(),
+                        tokenCount = tokenCount.get(),
+                        firstTokenTimestampMs = firstTokenTimestamp.get(),
+                        isFirstToken = firstTokenTimestamp.get() != 0L && tokenCount.get() == 1,
+                        timestampMs = System.currentTimeMillis()
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Streaming failed", e)
+        }
+    }.flowOn(Dispatchers.IO)
+
+    /**
+     * 完整 TTFT + 吞吐测量（挂起直到生成完成，返回汇总指标）
+     *
+     * 推荐用于 Benchmark Runner，因为它需要完整结果。
+     */
+    suspend fun measureFullStreamingMetrics(
+        prompt: String,
+        maxTokens: Int = 512,
+        temperature: Float = 0.7f
+    ): StreamingMetricsResult = withContext(Dispatchers.IO) {
+        val sb = StringBuilder()
+        var firstTokenMs = 0L
+        val start = System.currentTimeMillis()
+
+        try {
+            measureStreamingMetrics(prompt, maxTokens).collect { event ->
+                sb.append(event.token)
+                if (event.isFirstToken) {
+                    firstTokenMs = event.timestampMs - start
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Full streaming failed", e)
+        }
+
+        val totalMs = System.currentTimeMillis() - start
+        val text = sb.toString()
+        val tokens = estimateTokenCountStatic(text)
+        val ttft = firstTokenMs
+        val decodeMs = (totalMs - ttft).coerceAtLeast(1)
+        val decodeTokens = (tokens - estimateTokenCountStatic(prompt)).coerceAtLeast(1)
+        val prefillTokens = estimateTokenCountStatic(prompt)
+
+        StreamingMetricsResult(
+            fullText = text,
+            totalDurationMs = totalMs,
+            ttftMs = ttft,
+            prefillTokenCount = prefillTokens,
+            prefillTps = if (ttft > 0) prefillTokens * 1000.0 / ttft else 0.0,
+            outputTokenCount = decodeTokens,
+            decodeTps = if (decodeMs > 0) decodeTokens * 1000.0 / decodeMs else 0.0,
+            avgTokenLatencyMs = if (tokens > 0) totalMs.toDouble() / tokens else 0.0
+        )
+    }
+
+    /**
+     * 通过 Ollama API 生成文本
+     */
     suspend fun generateViaOllama(
         ollamaUrl: String,
         model: String,

@@ -35,5 +35,10 @@
             android:name=".ui.LogViewerActivity"
             android:exported="false"
             android:label="日志查看" />
+
+        <activity
+            android:name=".ui.ApiConfigActivity"
+            android:exported="false"
+            android:label="在线 API 配置" />
     </application>
 </manifest>

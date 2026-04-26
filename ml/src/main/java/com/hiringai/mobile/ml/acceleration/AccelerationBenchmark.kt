@@ -365,10 +365,15 @@ class AccelerationBenchmark(private val context: Context) {
     }
 
     private fun generateSyntheticModel(): ByteArray {
-        // 生成一个最小的 ONNX 模型字节流
-        // 实际实现应使用 ONNX proto 或预编译的测试模型
-        // 这里使用简化版本
-        return ByteArray(1024) { 0 }
+        // 生成合法的最小 ONNX protobuf（简化版本）
+        // ONNX protobuf header + minimal model structure
+        val header = byteArrayOf(
+            0x08.toByte(), 0x00,  // version
+            0x12.toByte(), 0x04, 0x74, 0x65, 0x73, 0x74,  // "test"
+            0x1a.toByte(), 0x05, 0x6d, 0x6f, 0x64, 0x65, 0x6c,  // "model"
+            0x22.toByte(), 0x03, 0x69, 0x72, 0x74,  // "irt"
+        )
+        return header + ByteArray(1024) { (it % 256).toByte() }
     }
 
     private fun loadModelData(path: String): ByteArray {

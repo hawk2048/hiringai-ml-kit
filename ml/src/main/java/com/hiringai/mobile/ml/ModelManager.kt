@@ -178,12 +178,12 @@ class ModelManager private constructor(private val context: Context) {
         val downloadedModels = getDownloadedModels()
         val totalSize = downloadedModels.sumOf { it.sizeBytes }
 
-        // 获取模型目录大小
+        // 获取模型目录大小（使用统一存储路径）
         val modelDirs = listOf(
-            File(context.filesDir, "models"),
-            File(context.filesDir, "speech_models"),
-            File(context.filesDir, "image_models"),
-            File(context.filesDir, "embedding_models")
+            ModelStorage.getLLMDir(context),
+            ModelStorage.getSpeechDir(context),
+            ModelStorage.getImageDir(context),
+            ModelStorage.getEmbeddingDir(context)
         )
 
         var actualSize = 0L
@@ -227,6 +227,73 @@ class ModelManager private constructor(private val context: Context) {
                 bytes >= 1_000 -> "%.0f KB".format(bytes / 1_000.0)
                 else -> "$bytes B"
             }
+        }
+    }
+
+    /**
+     * 同步下载模型（供 WorkManager 使用）
+     *
+     * @param modelName 模型名称
+     * @param downloadUrl 下载 URL（可选，默认使用内置 URL）
+     * @param modelSize 模型大小
+     * @param onProgress 进度回调 (progress, speed)
+     * @return 是否下载成功
+     */
+    suspend fun downloadModelSync(
+        modelName: String,
+        downloadUrl: String? = null,
+        modelSize: Long = 0L,
+        onProgress: (Int, String) -> Unit = { _, _ -> }
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            updateDownloadState(modelName, DownloadState.Downloading(0))
+            var lastUpdateTime = System.currentTimeMillis()
+            var lastProgress = 0
+
+            val success = downloadModelInternal(modelName) { progress ->
+                // 计算速度
+                val currentTime = System.currentTimeMillis()
+                val timeDiff = currentTime - lastUpdateTime
+                val speedStr = if (timeDiff >= 500 && modelSize > 0) {
+                    val progressDiff = progress - lastProgress
+                    if (progressDiff > 0 && timeDiff > 0) {
+                        val bytesPerSecond = (progressDiff.toDouble() / 100.0 * modelSize / timeDiff * 1000).toLong()
+                        formatSpeed(bytesPerSecond)
+                    } else ""
+                } else ""
+
+                if (timeDiff >= 500) {
+                    lastUpdateTime = currentTime
+                    lastProgress = progress
+                }
+
+                updateDownloadState(modelName, DownloadState.Downloading(progress, speedStr))
+                onProgress(progress, speedStr)
+            }
+
+            val state = if (success) {
+                DownloadState.Completed(modelName)
+            } else {
+                DownloadState.Failed(modelName, "下载失败")
+            }
+            updateDownloadState(modelName, state)
+            success
+        } catch (e: CancellationException) {
+            updateDownloadState(modelName, DownloadState.Cancelled(modelName))
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "Download failed: $modelName", e)
+            updateDownloadState(modelName, DownloadState.Failed(modelName, e.message ?: "未知错误"))
+            false
+        }
+    }
+
+    private fun formatSpeed(bytesPerSecond: Long): String {
+        return when {
+            bytesPerSecond >= 1_000_000_000 -> "%.1f GB/s".format(bytesPerSecond / 1_000_000_000.0)
+            bytesPerSecond >= 1_000_000 -> "%.1f MB/s".format(bytesPerSecond / 1_000_000.0)
+            bytesPerSecond >= 1_000 -> "%.1f KB/s".format(bytesPerSecond / 1_000.0)
+            else -> "$bytesPerSecond B/s"
         }
     }
 

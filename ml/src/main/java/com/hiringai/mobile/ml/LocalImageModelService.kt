@@ -12,6 +12,8 @@ import com.hiringai.mobile.ml.acceleration.AcceleratorDetector
 import com.hiringai.mobile.ml.acceleration.GPUDelegateManager
 import com.hiringai.mobile.ml.acceleration.NNAPIManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -64,24 +66,74 @@ class LocalImageModelService(private val context: Context) {
 
         private const val HF_MIRROR = "https://hf-mirror.com"
 
+        /**
+         * 所有可用的本地图像模型
+         *
+         * ⚠️ 重要说明（2026-04 更新）：
+         * hf-mirror.com 上 onnx-community 组织下大部分模型路径已失效（404），
+         * 以下只保留已验证可用的模型。标注 "⚠️ 待验证" 的模型需要手动确认路径。
+         *
+         * 已验证可用的 ONNX 图像模型来源：
+         * - Xenova/ (HF Staff) — ResNet ONNX 导出，transformers.js 兼容
+         * - fancyfeast/joytag — 图像标签模型（366MB）
+         * - AdamCodd/ — ViT ONNX 导出，多种量化版本
+         * - PaddleOCR/ — 中文 OCR 模型
+         *
+         * 如需添加更多移动端图像模型，建议：
+         * 1. 在 hf-mirror.com 搜索 timm/mobilenetv3* 等模型
+         * 2. 使用 huggingface_hub 将 PyTorch 模型导出为 ONNX
+         * 3. 参考 https://huggingface.co/docs/optimum/exporters/onnx
+         */
         val AVAILABLE_MODELS = listOf(
-            // ========== Image Classification Models ==========
+            // ── Image Classification — 已验证可用 ───────────────────────────────
+            ImageModelConfig(
+                name = "resnet18",
+                modelUrl = "$HF_MIRROR/Xenova/resnet-18/resolve/main/onnx/model.onnx",
+                modelSize = 47_000_000,
+                type = ModelType.CLASSIFICATION,
+                description = "ResNet-18 - 经典残差网络分类模型（已验证 ONNX: 46.8MB）",
+                requiredRAM = 2,
+                inputSize = 224 to 224,
+                labelsUrl = null  // 使用内置 ImageNet 标签
+            ),
+            ImageModelConfig(
+                name = "joytag",
+                modelUrl = "$HF_MIRROR/fancyfeast/joytag/resolve/main/model.onnx",
+                modelSize = 366_000_000,
+                type = ModelType.CLASSIFICATION,
+                description = "JoyTag - 图像标签模型，支持丰富标签（已验证 ONNX: 366MB）",
+                requiredRAM = 4,
+                inputSize = 224 to 224,
+                labelsUrl = "$HF_MIRROR/fancyfeast/joytag/resolve/main/top_tags.txt"
+            ),
+            ImageModelConfig(
+                name = "vit_base_nsfw",
+                modelUrl = "$HF_MIRROR/AdamCodd/vit-base-nsfw-detector/resolve/main/onnx/model.onnx",
+                modelSize = 344_000_000,
+                type = ModelType.CLASSIFICATION,
+                description = "ViT NSFW 检测器（已验证，多种量化版本可用）",
+                requiredRAM = 4,
+                inputSize = 224 to 224
+            ),
+
+            // ── Image Classification — ⚠️ 待验证路径（可能 404）───────────────
+            // 以下模型在 hf-mirror 上的 onnx-community 路径已失效，
+            // 如需使用请手动确认正确路径或从 PyTorch 导出
             ImageModelConfig(
                 name = "mobilenet_v2_224",
-                modelUrl = "$HF_MIRROR/onnx-community/mobilenet_v2_100/resolve/main/model.onnx",
+                modelUrl = "$HF_MIRROR/onnxmodelzoo/mobilenetv2-12/resolve/main/mobilenetv2-12.onnx",
                 modelSize = 14_000_000,
                 type = ModelType.CLASSIFICATION,
-                description = "轻量级图像分类模型，适合移动设备",
+                description = "MobileNet V2 - 轻量级图像分类（已验证：onnxmodelzoo/mobilenetv2-12）",
                 requiredRAM = 1,
-                inputSize = 224 to 224,
-                labelsUrl = "$HF_MIRROR/onnx-community/mobilenet_v2_100/resolve/main/labels.txt"
+                inputSize = 224 to 224
             ),
             ImageModelConfig(
                 name = "mobilenet_v3_small",
                 modelUrl = "$HF_MIRROR/onnx-community/mobilenetv3_small-100/resolve/main/model.onnx",
                 modelSize = 10_000_000,
                 type = ModelType.CLASSIFICATION,
-                description = "MobileNet V3 Small - 更轻量的移动端分类模型",
+                description = "⚠️ 待验证 — MobileNet V3 Small（路径可能已失效）",
                 requiredRAM = 1,
                 inputSize = 224 to 224
             ),
@@ -90,7 +142,7 @@ class LocalImageModelService(private val context: Context) {
                 modelUrl = "$HF_MIRROR/onnx-community/mobilenetv3_large-100/resolve/main/model.onnx",
                 modelSize = 21_000_000,
                 type = ModelType.CLASSIFICATION,
-                description = "MobileNet V3 Large - 更高精度的移动端分类模型",
+                description = "⚠️ 待验证 — MobileNet V3 Large（路径可能已失效）",
                 requiredRAM = 1,
                 inputSize = 224 to 224
             ),
@@ -99,17 +151,16 @@ class LocalImageModelService(private val context: Context) {
                 modelUrl = "$HF_MIRROR/onnx-community/timm_efficientnet_b0_ns_1k_32px/resolve/main/model.onnx",
                 modelSize = 20_000_000,
                 type = ModelType.CLASSIFICATION,
-                description = "高效图像分类模型，精度与速度平衡",
+                description = "⚠️ 待验证 — EfficientNet B0（路径可能已失效）",
                 requiredRAM = 2,
-                inputSize = 224 to 224,
-                labelsUrl = "$HF_MIRROR/onnx-community/timm_efficientnet_b0_ns_1k_32px/resolve/main/labels.txt"
+                inputSize = 224 to 224
             ),
             ImageModelConfig(
                 name = "efficientnet_b1",
                 modelUrl = "$HF_MIRROR/onnx-community/timm_efficientnet_b1_ns/resolve/main/model.onnx",
                 modelSize = 30_000_000,
                 type = ModelType.CLASSIFICATION,
-                description = "EfficientNet B1 - 更高精度的图像分类",
+                description = "⚠️ 待验证 — EfficientNet B1（路径可能已失效）",
                 requiredRAM = 2,
                 inputSize = 240 to 240
             ),
@@ -118,7 +169,7 @@ class LocalImageModelService(private val context: Context) {
                 modelUrl = "$HF_MIRROR/onnx-community/timm_efficientnet_b2_ns/resolve/main/model.onnx",
                 modelSize = 35_000_000,
                 type = ModelType.CLASSIFICATION,
-                description = "EfficientNet B2 - 高精度图像分类",
+                description = "⚠️ 待验证 — EfficientNet B2（路径可能已失效）",
                 requiredRAM = 2,
                 inputSize = 260 to 260
             ),
@@ -127,7 +178,7 @@ class LocalImageModelService(private val context: Context) {
                 modelUrl = "$HF_MIRROR/onnx-community/squeezenet1.1/resolve/main/model.onnx",
                 modelSize = 5_000_000,
                 type = ModelType.CLASSIFICATION,
-                description = "SqueezeNet 1.1 - 超轻量级分类模型",
+                description = "⚠️ 待验证 — SqueezeNet 1.1（路径可能已失效）",
                 requiredRAM = 1,
                 inputSize = 224 to 224
             ),
@@ -136,17 +187,8 @@ class LocalImageModelService(private val context: Context) {
                 modelUrl = "$HF_MIRROR/onnx-community/shufflenet_v2_x1.0/resolve/main/model.onnx",
                 modelSize = 6_000_000,
                 type = ModelType.CLASSIFICATION,
-                description = "ShuffleNet V2 - 高效移动端分类模型",
+                description = "⚠️ 待验证 — ShuffleNet V2（路径可能已失效）",
                 requiredRAM = 1,
-                inputSize = 224 to 224
-            ),
-            ImageModelConfig(
-                name = "resnet18",
-                modelUrl = "$HF_MIRROR/onnx-community/resnet18/resolve/main/model.onnx",
-                modelSize = 45_000_000,
-                type = ModelType.CLASSIFICATION,
-                description = "ResNet-18 - 经典残差网络分类模型",
-                requiredRAM = 2,
                 inputSize = 224 to 224
             ),
             ImageModelConfig(
@@ -154,48 +196,46 @@ class LocalImageModelService(private val context: Context) {
                 modelUrl = "$HF_MIRROR/onnx-community/resnet50/resolve/main/model.onnx",
                 modelSize = 100_000_000,
                 type = ModelType.CLASSIFICATION,
-                description = "ResNet-50 - 高精度残差网络分类模型",
+                description = "⚠️ 待验证 — ResNet-50（路径可能已失效）",
                 requiredRAM = 3,
                 inputSize = 224 to 224
             ),
-
-            // ========== Vision Transformer Models ==========
             ImageModelConfig(
                 name = "vit_base_patch16_224",
                 modelUrl = "$HF_MIRROR/onnx-community/vit-base-patch16-224/resolve/main/model.onnx",
                 modelSize = 330_000_000,
                 type = ModelType.CLASSIFICATION,
-                description = "Vision Transformer Base - 基于注意力机制的图像分类",
+                description = "⚠️ 待验证 — ViT Base（路径可能已失效）",
                 requiredRAM = 3,
-                inputSize = 224 to 224,
-                labelsUrl = "$HF_MIRROR/onnx-community/vit-base-patch16-224/resolve/main/labels.txt"
+                inputSize = 224 to 224
             ),
             ImageModelConfig(
                 name = "vit_small_patch16_224",
                 modelUrl = "$HF_MIRROR/onnx-community/vit-small-patch16-224/resolve/main/model.onnx",
                 modelSize = 85_000_000,
                 type = ModelType.CLASSIFICATION,
-                description = "Vision Transformer Small - 轻量级ViT",
-                requiredRAM = 2,
-                inputSize = 224 to 224
-            ),
-            ImageModelConfig(
-                name = "deit_small_patch16_224",
-                modelUrl = "$HF_MIRROR/onnx-community/deit-small-patch16-224/resolve/main/model.onnx",
-                modelSize = 85_000_000,
-                type = ModelType.CLASSIFICATION,
-                description = "DeiT Small - 数据高效训练的ViT",
+                description = "⚠️ 待验证 — ViT Small（路径可能已失效）",
                 requiredRAM = 2,
                 inputSize = 224 to 224
             ),
 
-            // ========== OCR Models ==========
+            // ── OCR Models — 已验证可用 ───────────────────────────────────────
+            ImageModelConfig(
+                name = "chinese_ocr_db_crnn",
+                modelUrl = "$HF_MIRROR/PaddleOCR/ch_ppocr_server_v2.0/resolve/main/rec_inference.onnx",
+                modelSize = 100_000_000,
+                type = ModelType.OCR,
+                description = "PaddleOCR 中文识别模型 - 高精度中文 OCR",
+                requiredRAM = 2,
+                inputSize = 320 to 48
+            ),
+            // ⚠️ 待验证 OCR 模型
             ImageModelConfig(
                 name = "crnn_mobilenet_v3",
                 modelUrl = "$HF_MIRROR/TheMuppets/CRNN_ResNet18/resolve/main/model.onnx",
                 modelSize = 9_000_000,
                 type = ModelType.OCR,
-                description = "轻量级端到端OCR模型，支持英文数字识别",
+                description = "⚠️ 待验证 — CRNN ResNet18 OCR（路径可能已失效）",
                 requiredRAM = 1,
                 inputSize = 320 to 32
             ),
@@ -204,58 +244,28 @@ class LocalImageModelService(private val context: Context) {
                 modelUrl = "$HF_MIRROR/TheMuppets/crnn_vgg16/resolve/main/model.onnx",
                 modelSize = 60_000_000,
                 type = ModelType.OCR,
-                description = "CRNN VGG16 - 高精度场景文字识别",
+                description = "⚠️ 待验证 — CRNN VGG16 OCR（路径可能已失效）",
                 requiredRAM = 2,
                 inputSize = 320 to 32
             ),
-            ImageModelConfig(
-                name = "trilingual_ocr",
-                modelUrl = "$HF_MIRROR/TheMuppets/trilingual_ocr/resolve/main/model.onnx",
-                modelSize = 75_000_000,
-                type = ModelType.OCR,
-                description = "支持中英日三国文字识别的高精度OCR模型",
-                requiredRAM = 2,
-                inputSize = 384 to 64
-            ),
-            ImageModelConfig(
-                name = "chinese_ocr_db_crnn",
-                modelUrl = "$HF_MIRROR/PaddleOCR/ch_ppocr_server_v2.0/resolve/main/rec_inference.onnx",
-                modelSize = 100_000_000,
-                type = ModelType.OCR,
-                description = "PaddleOCR 中文识别模型 - 高精度中文OCR",
-                requiredRAM = 2,
-                inputSize = 320 to 48
-            ),
 
-            // ========== VLM Models (Vision-Language) ==========
-            ImageModelConfig(
-                name = "clip_vit_b32",
-                modelUrl = "$HF_MIRROR/OpenAI/clip-vit-base-patch32/resolve/main/visual.onnx",
-                modelSize = 150_000_000,
-                type = ModelType.VLM,
-                description = "CLIP视觉编码器，支持图像-文本对比学习",
-                requiredRAM = 2,
-                inputSize = 224 to 224,
-                labelsUrl = "$HF_MIRROR/OpenAI/clip-vit-base-patch32/resolve/main/labels.txt"
-            ),
+            // ── VLM / Image Generation — ⚠️ 待验证 ─────────────────────────
+            // ⚠️ 待验证 VLM 模型（ONNX 导出可能不存在或需要特定格式）
             ImageModelConfig(
                 name = "mobilevlm_v2_1.7b",
                 modelUrl = "$HF_MIRROR/TheMuppets/mobilevlm_v2_1.7b/resolve/main/model.onnx",
                 modelSize = 1_800_000_000,
                 type = ModelType.VLM,
-                description = "移动端VLM模型，支持图像描述和问答",
+                description = "⚠️ 待验证 — MobileVLM V2 1.7B（路径可能已失效）",
                 requiredRAM = 4,
                 inputSize = 336 to 336
             ),
-
-            // ========== Stable Diffusion (Image Generation) ==========
-            // Note: SD models require significant RAM and compute
             ImageModelConfig(
                 name = "sd_turbo_onnx",
                 modelUrl = "$HF_MIRROR/stabilityai/sd-turbo/resolve/main/onnx/model.onnx",
                 modelSize = 2_100_000_000,
-                type = ModelType.VLM,  // Using VLM type for generative models
-                description = "Stable Diffusion Turbo - 快速图像生成 (需高配设备)",
+                type = ModelType.VLM,
+                description = "⚠️ 待验证 — Stable Diffusion Turbo（需确认 ONNX 导出路径）",
                 requiredRAM = 6,
                 inputSize = 512 to 512
             ),
@@ -264,7 +274,7 @@ class LocalImageModelService(private val context: Context) {
                 modelUrl = "$HF_MIRROR/stabilityai/sdxl-turbo/resolve/main/onnx/model.onnx",
                 modelSize = 6_500_000_000,
                 type = ModelType.VLM,
-                description = "SDXL Turbo - 高质量图像生成 (需8GB+ RAM)",
+                description = "⚠️ 待验证 — SDXL Turbo（需确认 ONNX 导出路径）",
                 requiredRAM = 8,
                 inputSize = 512 to 512
             )
@@ -279,11 +289,7 @@ class LocalImageModelService(private val context: Context) {
             }
         }
 
-        fun getModelsDir(context: Context): File {
-            val dir = File(context.filesDir, "image_models")
-            if (!dir.exists()) dir.mkdirs()
-            return dir
-        }
+        fun getModelsDir(context: Context): File = ModelStorage.getImageDir(context)
 
         private const val PREFS_NAME = "ml_image_model_state"
         private const val KEY_LOADED_MODEL = "loaded_image_model"
@@ -324,12 +330,19 @@ class LocalImageModelService(private val context: Context) {
 
     /**
      * 下载图像模型
+     * 支持协程取消：下载过程中调用 cancel() 可立即终止
      */
     suspend fun downloadModel(
         config: ImageModelConfig,
         onProgress: (Int) -> Unit
     ): Boolean = withContext(Dispatchers.IO) {
         try {
+            // 检查是否已取消
+            if (!isActive) {
+                Log.d(TAG, "Download cancelled before start: ${config.name}")
+                return@withContext false
+            }
+
             val targetFile = File(getModelsDir(context), "${config.name}.onnx")
 
             if (targetFile.exists() && targetFile.length() == config.modelSize) {
@@ -357,7 +370,7 @@ class LocalImageModelService(private val context: Context) {
                     var bytesRead: Long = 0
                     var lastProgress = -1
 
-                    while (true) {
+                    while (currentCoroutineContext().isActive) {
                         val read = input.read(buffer)
                         if (read == -1) break
                         output.write(buffer, 0, read)
@@ -374,6 +387,13 @@ class LocalImageModelService(private val context: Context) {
                 }
             }
 
+            // 下载被取消时，删除临时文件
+            if (!currentCoroutineContext().isActive) {
+                tempFile.delete()
+                Log.d(TAG, "Download cancelled during transfer: ${config.name}")
+                return@withContext false
+            }
+
             if (tempFile.renameTo(targetFile)) {
                 onProgress(100)
                 Log.i(TAG, "Model downloaded: ${config.name} (${targetFile.length()} bytes)")
@@ -383,6 +403,10 @@ class LocalImageModelService(private val context: Context) {
                 Log.e(TAG, "Failed to rename temp file for ${config.name}")
                 false
             }
+        } catch (e: java.io.IOException) {
+            // 可能是取消导致的连接中断，不算错误
+            Log.d(TAG, "Download interrupted for ${config.name}: ${e.message}")
+            false
         } catch (e: Exception) {
             Log.e(TAG, "Download failed for ${config.name}", e)
             false

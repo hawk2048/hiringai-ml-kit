@@ -2,6 +2,7 @@ package com.hiringai.mobile.ml.speech
 
 import android.content.Context
 import android.util.Log
+import com.hiringai.mobile.ml.ModelStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -106,11 +107,7 @@ class SpeechRecognitionService(private val context: Context) {
             }
         }
 
-        fun getModelsDir(context: Context): File {
-            val dir = File(context.filesDir, "speech_models")
-            if (!dir.exists()) dir.mkdirs()
-            return dir
-        }
+        fun getModelsDir(context: Context): File = ModelStorage.getSpeechDir(context)
     }
 
     private var loadedModel: SpeechModelConfig? = null

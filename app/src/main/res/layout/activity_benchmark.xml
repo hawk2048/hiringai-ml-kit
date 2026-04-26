@@ -1,116 +1,320 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="16dp">
+    android:background="@color/background">
 
-    <LinearLayout
+    <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical">
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="🏁 基准测试"
-            android:textSize="20sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="16dp" />
-
-        <!-- 模型选择 -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="选择测试模型:"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp" />
+        android:layout_height="match_parent"
+        android:fillViewport="true">
 
         <LinearLayout
-            android:id="@+id/modelCheckBoxContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="8dp" />
+            android:padding="@dimen/spacing_lg">
 
-        <!-- 操作按钮 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="12dp">
-
-            <Button
-                android:id="@+id/btnStartBenchmark"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_weight="1"
-                android:text="▶ 单项测试"
-                android:layout_marginEnd="8dp" />
-
-            <Button
-                android:id="@+id/btnBatchBenchmark"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_weight="1"
-                android:text="⏩ 批量测试" />
-        </LinearLayout>
-
-        <!-- 进度卡片 -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/progressCard"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            app:cardElevation="2dp"
-            app:cardCornerRadius="12dp"
-            xmlns:app="http://schemas.android.com/apk/res-auto">
-
+            <!-- 页面标题 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="@dimen/spacing_xl">
+
+                <ImageView
+                    android:layout_width="@dimen/icon_lg"
+                    android:layout_height="@dimen/icon_lg"
+                    android:src="@drawable/ic_benchmark"
+                    android:tint="@color/primary"
+                    android:contentDescription="Benchmark" />
 
                 <TextView
-                    android:id="@+id/progressStage"
-                    android:layout_width="match_parent"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="准备中..."
-                    android:textSize="14sp" />
-
-                <TextView
-                    android:id="@+id/progressModel"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textSize="12sp"
-                    android:textColor="#757575"
-                    android:layout_marginTop="4dp" />
-
-                <ProgressBar
-                    android:id="@+id/benchmarkProgressBar"
-                    style="?android:attr/progressBarStyleHorizontal"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:max="100" />
-
-                <TextView
-                    android:id="@+id/progressPercent"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="0%"
-                    android:textSize="12sp"
-                    android:textAlignment="viewEnd" />
+                    android:text="Benchmark"
+                    android:textSize="@dimen/text_xxl"
+                    android:textColor="@color/text_primary"
+                    android:textStyle="bold"
+                    android:layout_marginStart="@dimen/spacing_md" />
             </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
 
-        <!-- 结果容器 -->
-        <LinearLayout
-            android:id="@+id/resultContainer"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="16dp" />
+            <!-- 模型选择卡片 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/spacing_md"
+                app:cardCornerRadius="@dimen/card_radius"
+                app:cardElevation="@dimen/elevation_md"
+                app:cardBackgroundColor="@color/card_background"
+                style="@style/AppCardView">
 
-    </LinearLayout>
-</ScrollView>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/card_padding">
+
+                    <!-- 标题行 -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="@dimen/spacing_md">
+
+                        <ImageView
+                            android:layout_width="@dimen/icon_md"
+                            android:layout_height="@dimen/icon_md"
+                            android:src="@drawable/ic_models"
+                            android:tint="@color/primary"
+                            android:contentDescription="Models" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Select Models"
+                            android:textSize="@dimen/text_lg"
+                            android:textColor="@color/text_primary"
+                            android:textStyle="bold"
+                            android:layout_marginStart="@dimen/spacing_sm" />
+
+                        <View
+                            android:layout_width="0dp"
+                            android:layout_height="0dp"
+                            android:layout_weight="1" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSelectAll"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="Select All"
+                            android:textSize="@dimen/text_sm"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            app:cornerRadius="@dimen/radius_full" />
+                    </LinearLayout>
+
+                    <!-- 已下载计数提示 -->
+                    <TextView
+                        android:id="@+id/downloadedCountText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Built-in 8 models | Downloaded 0"
+                        android:textSize="@dimen/text_sm"
+                        android:textColor="@color/text_secondary"
+                        android:layout_marginBottom="@dimen/spacing_sm" />
+
+                    <!-- 模型列表 -->
+                    <LinearLayout
+                        android:id="@+id/modelCheckBoxContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="@dimen/spacing_sm"
+                        android:background="@drawable/bg_model_list" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 操作按钮 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="@dimen/spacing_sm">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnQuickBenchmark"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/button_height"
+                    android:layout_weight="1"
+                    android:text="Quick Test"
+                    android:textSize="@dimen/text_md"
+                    app:icon="@drawable/ic_flash"
+                    app:iconGravity="textStart"
+                    android:layout_marginEnd="@dimen/spacing_sm"
+                    app:cornerRadius="@dimen/button_radius"
+                    style="@style/AppButtonPrimary" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnStartBenchmark"
+                    android:layout_width="0dp"
+                    android:layout_height="@dimen/button_height"
+                    android:layout_weight="1"
+                    android:text="Single Test"
+                    android:textSize="@dimen/text_md"
+                    app:icon="@drawable/ic_play"
+                    app:iconGravity="textStart"
+                    android:layout_marginStart="@dimen/spacing_sm"
+                    app:cornerRadius="@dimen/button_radius"
+                    style="@style/AppButtonSecondary" />
+            </LinearLayout>
+
+            <!-- 批量测试按钮 -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnBatchBenchmark"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/button_height"
+                android:text="Batch Test (Selected)"
+                android:textSize="@dimen/text_md"
+                app:icon="@drawable/ic_batch"
+                app:iconGravity="textStart"
+                app:cornerRadius="@dimen/button_radius"
+                android:layout_marginBottom="@dimen/spacing_md"
+                style="@style/AppButtonSecondary" />
+
+            <!-- 进度卡片 -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/progressCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/spacing_md"
+                android:visibility="gone"
+                app:cardCornerRadius="@dimen/card_radius"
+                app:cardElevation="@dimen/elevation_md"
+                app:cardBackgroundColor="@color/card_background"
+                style="@style/AppCardView">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/card_padding">
+
+                    <!-- 进度标题 -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="@dimen/spacing_md">
+
+                        <com.google.android.material.progressindicator.CircularProgressIndicator
+                            android:id="@+id/circularProgress"
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:indeterminate="false"
+                            app:indicatorColor="@color/primary"
+                            app:trackColor="@color/surface_variant"
+                            app:trackThickness="5dp"
+                            android:max="100" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:layout_marginStart="@dimen/spacing_md">
+
+                            <TextView
+                                android:id="@+id/progressStage"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Loading..."
+                                android:textSize="@dimen/text_lg"
+                                android:textColor="@color/text_primary"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/progressModel"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:textSize="@dimen/text_sm"
+                                android:textColor="@color/text_secondary"
+                                android:layout_marginTop="@dimen/spacing_xxs" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/progressPercent"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="0%"
+                            android:textSize="@dimen/text_xxl"
+                            android:textColor="@color/primary"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <!-- 进度条 -->
+                    <com.google.android.material.progressindicator.LinearProgressIndicator
+                        android:id="@+id/benchmarkProgressBar"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:indicatorColor="@color/primary"
+                        app:trackColor="@color/surface_variant"
+                        app:trackCornerRadius="@dimen/radius_sm"
+                        app:trackThickness="8dp"
+                        android:max="100" />
+
+                    <!-- 子阶段指示器 -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center"
+                        android:layout_marginTop="@dimen/spacing_sm">
+
+                        <TextView
+                            android:id="@+id/stageCheckDownload"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Check"
+                            android:textSize="@dimen/text_xs"
+                            android:textColor="@color/text_tertiary"
+                            android:paddingHorizontal="@dimen/spacing_sm" />
+
+                        <View
+                            android:layout_width="24dp"
+                            android:layout_height="2dp"
+                            android:background="@color/divider" />
+
+                        <TextView
+                            android:id="@+id/stageLoading"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Load"
+                            android:textSize="@dimen/text_xs"
+                            android:textColor="@color/text_tertiary"
+                            android:paddingHorizontal="@dimen/spacing_sm" />
+
+                        <View
+                            android:layout_width="24dp"
+                            android:layout_height="2dp"
+                            android:background="@color/divider" />
+
+                        <TextView
+                            android:id="@+id/stageGenerating"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Generate"
+                            android:textSize="@dimen/text_xs"
+                            android:textColor="@color/text_tertiary"
+                            android:paddingHorizontal="@dimen/spacing_sm" />
+
+                        <View
+                            android:layout_width="24dp"
+                            android:layout_height="2dp"
+                            android:background="@color/divider" />
+
+                        <TextView
+                            android:id="@+id/stageUnloading"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Unload"
+                            android:textSize="@dimen/text_xs"
+                            android:textColor="@color/text_tertiary"
+                            android:paddingHorizontal="@dimen/spacing_sm" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 结果容器 -->
+            <LinearLayout
+                android:id="@+id/resultContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

@@ -46,9 +46,9 @@ dependencies {
     implementation 'androidx.core:core-ktx:1.15.0'
     implementation 'androidx.appcompat:appcompat:1.7.0'
 
-    // Coroutines
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0'
+    // Coroutines - api so dependent modules can use Flow types
+    api 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
+    api 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0'
 
     // ML — On-device LLM (llama.cpp via Kotlin binding)
     implementation 'org.codeshipping:llama-kotlin-android:0.1.3'

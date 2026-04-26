@@ -10,6 +10,8 @@ import com.hiringai.mobile.ml.acceleration.AcceleratorDetector
 import com.hiringai.mobile.ml.acceleration.GPUDelegateManager
 import com.hiringai.mobile.ml.acceleration.NNAPIManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -44,13 +46,15 @@ class LocalEmbeddingService(private val context: Context) {
 
     data class EmbeddingModelConfig(
         val name: String,
-        val modelUrl: String,       // ONNX model URL
+        val modelUrl: String,       // 模型文件 URL（.onnx 或 .bin）
         val vocabUrl: String,       // tokenizer vocab URL
         val modelSize: Long,
         val dimension: Int,
         val maxSeqLength: Int = 256,
-        val description: String = "",  // 模型描述/适用场景
-        val recommendedFor: String = "" // 推荐用途
+        val description: String = "",       // 模型描述/适用场景
+        val recommendedFor: String = "",    // 推荐用途
+        /** 模型文件扩展名，默认 .onnx；PyTorch 模型（如 bge-base-zh-v1.5）使用 .bin */
+        val modelFileExtension: String = ".onnx"
     )
 
     companion object {
@@ -59,73 +63,115 @@ class LocalEmbeddingService(private val context: Context) {
         // 使用 hf-mirror.com 国内镜像解决 huggingface.co 被墙问题
         private const val HF_MIRROR = "https://hf-mirror.com"
 
+        /**
+         * 所有可用的本地 Embedding 模型
+         *
+         * ONNX 文件名规律（sentence-transformers 官方导出标准）：
+         *   - model.onnx          — 原始 FP32 精度（最大）
+         *   - model_O4.onnx       — O4 优化（体积减半，精度接近 FP32）⭐ 推荐
+         *   - model_qint8_*.onnx — INT8 量化（平台特定加速指令）
+         *
+         * vocab 文件类型：
+         *   - vocab.txt                  — BERT WordPiece 词表（~232kB）
+         *   - sentencepiece.bpe.model    — SentencePiece BPE 词表（~5MB）
+         *
+         * ⚠️ bge-base-zh-v1.5 和 bge-large-zh-v1.5 暂无 ONNX 导出，
+         *    当前使用 PyTorch bin（需更大内存和 ONNX Runtime PyTorch 后端）。
+         *    建议关注 https://huggingface.co/BAAI/bge-base-zh-v1.5/discussions
+         */
         val AVAILABLE_MODELS = listOf(
-            // ========== 轻量级 (<100MB) ==========
+            // ── 英文 Embedding（超轻量，适合移动端）──────────────────────────
             EmbeddingModelConfig(
                 name = "all-MiniLM-L6-v2",
                 modelUrl = "$HF_MIRROR/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx",
                 vocabUrl = "$HF_MIRROR/sentence-transformers/all-MiniLM-L6-v2/resolve/main/vocab.txt",
-                modelSize = 90_000_000,
+                modelSize = 91_000_000,
                 dimension = 384,
                 maxSeqLength = 256,
-                description = "轻量级英文语义匹配模型，6层Transformer",
+                description = "轻量级英文语义匹配模型，6层Transformer，ONNX FP32（90MB）",
                 recommendedFor = "英文文本相似度计算、语义匹配（资源受限设备首选）"
             ),
             EmbeddingModelConfig(
                 name = "all-MiniLM-L12-v2",
                 modelUrl = "$HF_MIRROR/sentence-transformers/all-MiniLM-L12-v2/resolve/main/onnx/model.onnx",
                 vocabUrl = "$HF_MIRROR/sentence-transformers/all-MiniLM-L12-v2/resolve/main/vocab.txt",
-                modelSize = 120_000_000,
+                modelSize = 133_000_000,
                 dimension = 384,
                 maxSeqLength = 256,
-                description = "中等量级英文语义匹配模型，12层Transformer，更高精度",
+                description = "英文语义匹配模型，12层Transformer，更高精度（133MB）",
                 recommendedFor = "英文文本相似度计算、语义匹配（需要更高精度时）"
             ),
 
-            // ========== 中量级 (100-200MB) - 英文优化 ==========
+            // ── 多语言 Embedding（中英双语，支持 50+ 语言）───────────────────
             EmbeddingModelConfig(
-                name = "paraphrase-MiniLM-L6-v2",
-                modelUrl = "$HF_MIRROR/sentence-transformers/paraphrase-MiniLM-L6-v2/resolve/main/onnx/model.onnx",
-                vocabUrl = "$HF_MIRROR/sentence-transformers/paraphrase-MiniLM-L6-v2/resolve/main/vocab.txt",
-                modelSize = 90_000_000,
-                dimension = 384,
-                maxSeqLength = 256,
-                description = "英文改写模型，适合句子改写和释义识别",
-                recommendedFor = "英文改写检测、句子释义识别"
+                name = "paraphrase-multilingual-MiniLM-L12-v2",
+                modelUrl = "$HF_MIRROR/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/onnx/model.onnx",
+                vocabUrl = "$HF_MIRROR/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/vocab.txt",
+                modelSize = 471_000_000,
+                dimension = 768,
+                maxSeqLength = 128,
+                description = "中英双语语义模型，支持50+语言，12层Transformer，性价比最高（470MB）",
+                recommendedFor = "中英双语语义搜索、跨语言检索、问答匹配"
             ),
+
+            // ── BGE 英文系列（智源开源，MTEB 榜单高分）─────────────────────
             EmbeddingModelConfig(
                 name = "bge-small-en-v1.5",
                 modelUrl = "$HF_MIRROR/BAAI/bge-small-en-v1.5/resolve/main/onnx/model.onnx",
                 vocabUrl = "$HF_MIRROR/BAAI/bge-small-en-v1.5/resolve/main/vocab.txt",
-                modelSize = 130_000_000,
+                modelSize = 134_000_000,
                 dimension = 384,
                 maxSeqLength = 512,
-                description = "BGE 英文小模型，1.5版本优化，召回效果好",
+                description = "BGE 英文小模型 v1.5，召回效果好，512最长序列（133MB）",
                 recommendedFor = "英文文本召回、检索（高召回率场景）"
             ),
-
-            // ========== 中量级 (100-200MB) - 中文优化 ==========
             EmbeddingModelConfig(
-                name = "bge-base-zh-v1.5",
-                modelUrl = "$HF_MIRROR/BAAI/bge-base-zh-v1.5/resolve/main/onnx/model.onnx",
-                vocabUrl = "$HF_MIRROR/BAAI/bge-base-zh-v1.5/resolve/main/vocab.txt",
-                modelSize = 170_000_000,
+                name = "bge-base-en-v1.5",
+                modelUrl = "$HF_MIRROR/BAAI/bge-base-en-v1.5/resolve/main/onnx/model.onnx",
+                vocabUrl = "$HF_MIRROR/BAAI/bge-base-en-v1.5/resolve/main/vocab.txt",
+                modelSize = 439_000_000,
                 dimension = 768,
                 maxSeqLength = 512,
-                description = "BGE 中文基础模型，768维向量，中文语义理解强",
-                recommendedFor = "中文文本召回、语义匹配（推荐中文场景）"
+                description = "BGE 英文基础模型 v1.5，768维向量，精度更高（438MB）",
+                recommendedFor = "英文高精度语义搜索、英文文档摘要"
             ),
 
-            // ========== 大模型 (>200MB) - 中文优化 ==========
+            // ── BGE 中文系列（智源开源，主流中文 Embedding）────────────────
+            // ⚠️ 注意：bge-base-zh-v1.5 目前无 ONNX 导出，使用 PyTorch 模型
             EmbeddingModelConfig(
-                name = "bge-large-zh-v1.5",
-                modelUrl = "$HF_MIRROR/BAAI/bge-large-zh-v1.5/resolve/main/onnx/model.onnx",
-                vocabUrl = "$HF_MIRROR/BAAI/bge-large-zh-v1.5/resolve/main/vocab.txt",
-                modelSize = 500_000_000,
-                dimension = 1024,
+                name = "bge-base-zh-v1.5",
+                modelUrl = "$HF_MIRROR/BAAI/bge-base-zh-v1.5/resolve/main/pytorch_model.bin",
+                vocabUrl = "$HF_MIRROR/BAAI/bge-base-zh-v1.5/resolve/main/vocab.txt",
+                modelSize = 410_000_000,
+                dimension = 768,
                 maxSeqLength = 512,
-                description = "BGE 中文大模型，1024维向量，最高精度",
-                recommendedFor = "中文高精度语义匹配（设备性能充足时）"
+                description = "BGE 中文基础模型，暂无 ONNX，使用 PyTorch bin（409MB，需更大内存）",
+                recommendedFor = "中文文本召回、语义匹配（推荐中文场景）",
+                modelFileExtension = ".bin"
+            ),
+
+            // ── 多语言 E5 系列（支持 94 种语言，含中文）────────────────────
+            EmbeddingModelConfig(
+                name = "multilingual-e5-small",
+                modelUrl = "$HF_MIRROR/intfloat/multilingual-e5-small/resolve/main/onnx/model_O4.onnx",
+                vocabUrl = "$HF_MIRROR/intfloat/multilingual-e5-small/resolve/main/sentencepiece.bpe.model",
+                modelSize = 219_000_000,
+                dimension = 384,
+                maxSeqLength = 512,
+                description = "多语言 E5 小模型，O4优化版，支持94种语言，中英双语（218MB）",
+                recommendedFor = "多语言语义搜索、跨语言检索、中英双语"
+            ),
+
+            // ── Nomic Embed（开源长文本 Embedding，8192 上下文）────────────
+            EmbeddingModelConfig(
+                name = "nomic-embed-text-v1.5",
+                modelUrl = "$HF_MIRROR/nomic-ai/nomic-embed-text-v1.5/resolve/main/onnx/model_O4.onnx",
+                vocabUrl = "$HF_MIRROR/nomic-ai/nomic-embed-text-v1.5/resolve/main/vocab.txt",
+                modelSize = 548_000_000,
+                dimension = 768,
+                maxSeqLength = 8192,
+                description = "开源长文本 Embedding，支持8192超长上下文，O4优化版（547MB）",
+                recommendedFor = "英文长文档嵌入、论文检索、长文本语义搜索"
             )
         )
 
@@ -175,10 +221,22 @@ class LocalEmbeddingService(private val context: Context) {
     /**
      * 检查模型是否已下载
      */
-    fun isModelDownloaded(modelName: String): Boolean {
-        val modelFile = File(LocalLLMService.getEmbeddingModelDir(context), "$modelName.onnx")
-        val vocabFile = File(LocalLLMService.getEmbeddingModelDir(context), "$modelName.vocab.txt")
+    /**
+     * 检查模型是否已下载（通过 config）
+     */
+    fun isModelDownloaded(config: EmbeddingModelConfig): Boolean {
+        val modelFile = File(LocalLLMService.getEmbeddingModelDir(context), "${config.name}${config.modelFileExtension}")
+        val vocabFile = File(LocalLLMService.getEmbeddingModelDir(context), "${config.name}.vocab.txt")
         return modelFile.exists() && vocabFile.exists()
+    }
+
+    /**
+     * 检查模型是否已下载（通过 name 字符串，兼容旧调用）
+     */
+    fun isModelDownloaded(modelName: String): Boolean {
+        val config = AVAILABLE_MODELS.find { it.name == modelName }
+            ?: return false
+        return isModelDownloaded(config)
     }
 
     /**
@@ -190,7 +248,7 @@ class LocalEmbeddingService(private val context: Context) {
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             val dir = LocalLLMService.getEmbeddingModelDir(context)
-            val modelFile = File(dir, "${config.name}.onnx")
+            val modelFile = File(dir, "${config.name}${config.modelFileExtension}")
             val vocabFile = File(dir, "${config.name}.vocab.txt")
 
             // Download vocab first (small file)
@@ -230,7 +288,7 @@ class LocalEmbeddingService(private val context: Context) {
     suspend fun loadModel(config: EmbeddingModelConfig): Boolean = withContext(Dispatchers.IO) {
         try {
             val dir = LocalLLMService.getEmbeddingModelDir(context)
-            val modelFile = File(dir, "${config.name}.onnx")
+            val modelFile = File(dir, "${config.name}${config.modelFileExtension}")
             val vocabFile = File(dir, "${config.name}.vocab.txt")
 
             if (!modelFile.exists() || !vocabFile.exists()) {
@@ -566,18 +624,34 @@ class LocalEmbeddingService(private val context: Context) {
     private suspend fun downloadFile(urlStr: String, target: File): Boolean =
         withContext(Dispatchers.IO) {
             try {
+                // 检查是否已取消
+                if (!isActive) {
+                    Log.d(TAG, "Download cancelled: $urlStr")
+                    return@withContext false
+                }
+
                 val url = URL(urlStr)
                 url.openStream().use { input ->
                     FileOutputStream(target).use { output ->
                         val buffer = ByteArray(8192)
-                        while (true) {
+                        while (currentCoroutineContext().isActive) {
                             val read = input.read(buffer)
                             if (read == -1) break
                             output.write(buffer, 0, read)
                         }
                     }
                 }
+                // 如果被取消，删除不完整的文件
+                if (!currentCoroutineContext().isActive) {
+                    target.delete()
+                    Log.d(TAG, "Download cancelled: $urlStr")
+                    return@withContext false
+                }
                 true
+            } catch (e: java.io.IOException) {
+                Log.d(TAG, "Download interrupted: $urlStr - ${e.message}")
+                target.delete()
+                false
             } catch (e: Exception) {
                 Log.e(TAG, "Download failed: $urlStr", e)
                 target.delete()
@@ -591,6 +665,12 @@ class LocalEmbeddingService(private val context: Context) {
         onProgress: (Int) -> Unit
     ): Boolean = withContext(Dispatchers.IO) {
         try {
+            // 检查是否已取消
+            if (!isActive) {
+                Log.d(TAG, "Download cancelled before start: $urlStr")
+                return@withContext false
+            }
+
             val temp = File(target.parent, "${target.name}.tmp")
             val url = URL(urlStr)
             val conn = url.openConnection()
@@ -603,7 +683,7 @@ class LocalEmbeddingService(private val context: Context) {
                     var bytesRead = 0L
                     var lastPct = -1
 
-                    while (true) {
+                    while (currentCoroutineContext().isActive) {
                         val read = input.read(buffer)
                         if (read == -1) break
                         output.write(buffer, 0, read)
@@ -618,8 +698,19 @@ class LocalEmbeddingService(private val context: Context) {
                     }
                 }
             }
+
+            // 如果被取消，删除不完整的文件
+            if (!currentCoroutineContext().isActive) {
+                temp.delete()
+                Log.d(TAG, "Download cancelled during transfer: $urlStr")
+                return@withContext false
+            }
+
             temp.renameTo(target)
             true
+        } catch (e: java.io.IOException) {
+            Log.d(TAG, "Download interrupted: $urlStr - ${e.message}")
+            false
         } catch (e: Exception) {
             Log.e(TAG, "Download with progress failed: $urlStr", e)
             false

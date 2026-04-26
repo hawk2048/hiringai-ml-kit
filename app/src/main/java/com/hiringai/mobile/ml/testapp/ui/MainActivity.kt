@@ -28,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var storageInfoText: TextView
     private lateinit var progressBar: ProgressBar
     private lateinit var statusText: TextView
+    private lateinit var apiConfigStatusText: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,8 +48,9 @@ class MainActivity : AppCompatActivity() {
         storageInfoText = findViewById(R.id.storageInfoText)
         progressBar = findViewById(R.id.progressBar)
         statusText = findViewById(R.id.statusText)
+        apiConfigStatusText = findViewById(R.id.apiConfigStatusText)
 
-        // 功能按钮
+        // BenchmarkActivity
         findViewById<View>(R.id.btnBenchmark).setOnClickListener {
             startActivity(Intent(this, BenchmarkActivity::class.java))
         }
@@ -58,6 +60,25 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnLogViewer).setOnClickListener {
             startActivity(Intent(this, LogViewerActivity::class.java))
         }
+        findViewById<View>(R.id.btnApiConfig).setOnClickListener {
+            startActivity(Intent(this, ApiConfigActivity::class.java))
+        }
+
+        // 更新 API 配置状态显示
+        updateApiConfigStatus()
+    }
+
+    private fun updateApiConfigStatus() {
+        val prefs = getSharedPreferences(ApiConfigActivity.PREF_NAME, MODE_PRIVATE)
+        val configured = when {
+            prefs.getString(ApiConfigActivity.KEY_SILICONFLOW, "")?.isNotBlank() == true -> "✓ 硅基流动已配置"
+            prefs.getString(ApiConfigActivity.KEY_ZHIPU, "")?.isNotBlank() == true -> "✓ 智谱AI已配置"
+            prefs.getString(ApiConfigActivity.KEY_ALIYUN, "")?.isNotBlank() == true -> "✓ 阿里云百炼已配置"
+            prefs.getString(ApiConfigActivity.KEY_GROQ, "")?.isNotBlank() == true -> "✓ Groq已配置"
+            prefs.getString(ApiConfigActivity.KEY_OPENROUTER, "")?.isNotBlank() == true -> "✓ OpenRouter已配置"
+            else -> "点击配置免费 API 密钥"
+        }
+        apiConfigStatusText.text = configured
     }
 
     private fun loadDeviceInfo() {
@@ -67,10 +88,17 @@ class MainActivity : AppCompatActivity() {
             val storage = modelManager.getStorageUsage()
 
             deviceInfoText.text = buildString {
-                appendLine("📱 CPU: ${capability.cpuCores}核, ${capability.cpuArchitecture}")
-                appendLine("💾 RAM: ${capability.totalRAM} GB (可用: ${capability.availableRAM} GB)")
-                appendLine("🎮 GPU: ${capability.gpuName}")
-                appendLine("⚡ Vulkan: ${if (capability.hasVulkan) "支持" else "不支持"}, 性能评分: ${capability.benchmarkScore}/100")
+                appendLine("📱 SoC : ${capability.socModel}")
+                appendLine("⚙️ CPU : ${capability.cpuCores}核 ${capability.cpuArchitecture}")
+                appendLine("       大核 ${capability.cpuBigCoreMaxFreqMHz}MHz · 小核 ${capability.cpuLittleCoreMaxFreqMHz}MHz")
+                appendLine("💾 RAM : ${capability.totalRAM}MB (可用 ${capability.availableRAM}MB)")
+                appendLine("🎮 GPU : ${capability.gpuName}")
+                appendLine("🧠 NPU : ${if (capability.npuAvailable) "✓ 可用" else "✗ 未检测到"}")
+                appendLine("⚡ Vulkan: ${if (capability.hasVulkan) "支持" else "不支持"}")
+                if (capability.cpuTempCelsius > 0) {
+                    appendLine("🌡️ CPU 温度: ${"%.1f".format(capability.cpuTempCelsius)}°C")
+                }
+                appendLine("📊 性能评分: ${capability.benchmarkScore}/100")
             }
 
             storageInfoText.text = buildString {
@@ -83,5 +111,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         loadDeviceInfo()
+        updateApiConfigStatus()
     }
 }
